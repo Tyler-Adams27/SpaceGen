@@ -1,7 +1,9 @@
 mod basis;
+mod export;
 mod sky;
 
 pub use basis::{FaceBasis, face_basis};
+pub use export::{ExportError, ExportOptions, export_skybox, linear_to_srgb};
 pub use sky::{MAX_LAYERS, Projection, SkyPipeline, SkyUniforms};
 
 use spacegen_core::{Face, Project};

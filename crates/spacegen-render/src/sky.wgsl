@@ -8,13 +8,13 @@ const PI: f32 = 3.1415927;
 
 // ---- Look constants: tune the sky here -------------------------------------
 const STAR_GRID: f32 = 60.0;          // grid cells per unit direction (star spacing)
-const STAR_PRESENCE_SCALE: f32 = 0.12; // chance a cell holds a star at density 1.0
+const STAR_PRESENCE_SCALE: f32 = 0.45; // chance a cell holds a star at density 1.0
 const STAR_MIN_RADIUS: f32 = 0.0012;  // angular radius (radians) at size 0.0
 const STAR_MAX_RADIUS: f32 = 0.0060;  // angular radius (radians) at size 1.0
 const STAR_PIXEL_FLOOR: f32 = 0.9;    // never smaller than this many pixels
-const STAR_BRIGHTNESS_BASE: f32 = 0.05;
-const STAR_BRIGHTNESS_RANGE: f32 = 3.0;
-const STAR_BRIGHTNESS_SKEW: f32 = 6.0; // higher = fewer bright stars
+const STAR_BRIGHTNESS_BASE: f32 = 0.08;
+const STAR_BRIGHTNESS_RANGE: f32 = 4.0;
+const STAR_BRIGHTNESS_SKEW: f32 = 9.0; // higher = fewer bright stars
 // ----------------------------------------------------------------------------
 
 struct Layer {

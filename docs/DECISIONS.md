@@ -27,3 +27,13 @@ The user said: "from here on, you will have agency… just get me a MVP. Documen
 - **Equirectangular orientation:** the image centre looks toward +Z and +X is a quarter turn to the right, copying Godot's sky shader. Y is up. This differs from Blender (Z-up, centre at +X), which the research file flags as unconfirmed for the other engines; revisit when verified in an engine.
 - **Renderer constructors:** `Renderer::software()` (tests, reproducible) and `Renderer::gpu()` (app).
 - **Image viewing during development:** the PPM writer from Q75 is dropped. The `image` crate is needed for Export anyway, so I add it now and view PNGs directly.
+
+### Export (slice 9)
+
+- **Where it lives:** `spacegen-render::export`, because it needs rendered pixels; it takes a `Renderer`, a `Project`, a folder and `ExportOptions`, and reports progress through a callback so the app can run it on a thread.
+- **Outputs:** six Faces named by Engine convention, one equirectangular panorama (`<name>_panorama.png|jpg`, width = 4 x face size, so equator pixel density matches the Faces) and an OpenEXR HDRI (`<name>.exr`, 32-bit float, linear, same panorama).
+- **Color:** PNG and JPEG are sRGB-encoded from linear light (the sRGB curve runs in `f64`, because the `f32` version turned pure white into 65534). EXR stays linear and keeps values above 1.0.
+- **PNG depth:** 16-bit always; no 8-bit PNG option in the MVP. JPEG is 8-bit with a quality setting (default 95).
+- **Radiance `.hdr`** is not offered; OpenEXR covers the HDRI requirement and Blender and the major engines read it.
+- **`image` crate** with only the `png`, `jpeg` and `exr` features, to keep compile time down.
+- **Look tuning:** star presence 0.45, brightness skew 9 after viewing renders; `examples/dump_sky.rs` renders a sample sky to PNG for this.
