@@ -122,6 +122,59 @@ impl Project {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Face {
+    PositiveX,
+    NegativeX,
+    PositiveY,
+    NegativeY,
+    PositiveZ,
+    NegativeZ,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImageFormat {
+    Png,
+    Jpeg,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EngineConvention {
+    Unity,
+    Unreal,
+    Godot,
+}
+
+impl EngineConvention {
+    pub fn face_file_name(self, name: &str, face: Face, format: ImageFormat) -> String {
+        let label = match (self, face) {
+            (EngineConvention::Godot, Face::PositiveX) => "px",
+            (EngineConvention::Godot, Face::NegativeX) => "nx",
+            (EngineConvention::Godot, Face::PositiveY) => "py",
+            (EngineConvention::Godot, Face::NegativeY) => "ny",
+            (EngineConvention::Godot, Face::PositiveZ) => "pz",
+            (EngineConvention::Godot, Face::NegativeZ) => "nz",
+            (EngineConvention::Unreal, Face::PositiveX) => "PositiveX",
+            (EngineConvention::Unreal, Face::NegativeX) => "NegativeX",
+            (EngineConvention::Unreal, Face::PositiveY) => "PositiveY",
+            (EngineConvention::Unreal, Face::NegativeY) => "NegativeY",
+            (EngineConvention::Unreal, Face::PositiveZ) => "PositiveZ",
+            (EngineConvention::Unreal, Face::NegativeZ) => "NegativeZ",
+            (EngineConvention::Unity, Face::PositiveX) => "Left",
+            (EngineConvention::Unity, Face::NegativeX) => "Right",
+            (EngineConvention::Unity, Face::PositiveY) => "Up",
+            (EngineConvention::Unity, Face::NegativeY) => "Down",
+            (EngineConvention::Unity, Face::PositiveZ) => "Front",
+            (EngineConvention::Unity, Face::NegativeZ) => "Back",
+        };
+        let extension = match format {
+            ImageFormat::Png => "png",
+            ImageFormat::Jpeg => "jpg",
+        };
+        format!("{name}_{label}.{extension}")
+    }
+}
+
 impl Seed {
     pub fn layer_seed(self, layer: LayerId) -> Seed {
         const GAMMA: u64 = 0x9E3779B97F4A7C15;

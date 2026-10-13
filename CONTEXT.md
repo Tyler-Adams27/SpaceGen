@@ -34,7 +34,7 @@ One of the six square images that make up a cubemap.
 One of three outputs: six individual Faces (PNG or JPEG), a single full image (equirectangular, PNG or JPEG), or an HDRI (OpenEXR, with Radiance as an alternative).
 
 **Engine convention**:
-The face naming and orientation scheme a target tool expects (Unity, Unreal, Godot, Blender). Selected at Export.
+The face file-naming scheme and order a target engine expects (Unity, Unreal, Godot). Selected at Export. It covers names only: Face pixels are always written in one fixed orientation, and any flip is left to the user. Blender has no six-face import, so it is served by the full image and HDRI Export formats instead.
 
 **Layer ID**:
 A stable identifier for a Layer. Its randomness derives from the Seed plus its Layer ID, so editing one Layer never changes another.
