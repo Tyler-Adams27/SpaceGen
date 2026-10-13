@@ -46,3 +46,15 @@ The user said: "from here on, you will have agency… just get me a MVP. Documen
 - **Preview camera** (`camera_basis`): yaw from +Z toward +X, pitch up, vertical field of view; the Preview reuses the shader through a `FaceBasis`, so no separate preview shader exists.
 - **Randomize** lives in the app (`seed_source::fresh_seed`: clock plus counter through a SplitMix64 finalizer) so `spacegen-core` stays deterministic.
 - **App dependencies:** `eframe` 0.36 (pulls `wgpu` 30.0.1, the same version as `spacegen-render`) and `rfd` for native open/save/folder dialogs.
+
+### The app (slice 11, the MVP window)
+
+- **One window, three areas:** a left control panel (project, seed, layer list, selected Layer, export), a status line, and the Preview filling the rest. No menu bar: egui menus add little for this few commands.
+- **Preview** is the export shader drawn through an egui wgpu paint callback sharing the app's device; dragging moves the sky one pixel per pixel at any zoom; scroll zooms (field of view 0.2 to 2.4 radians).
+- **Export runs on a background thread** with its own `Renderer::gpu()` (a second device on the same GPU) and reports progress over a channel, so the window stays responsive. It cannot be cancelled in the MVP.
+- **Unsaved changes** are shown by a `*` in the window title, found by comparing the project JSON with the last saved JSON. There is no "save changes?" prompt on close or New in the MVP.
+- **Tint** values are used as linear multipliers exactly as the color picker shows them; no gamma conversion between picker and shader.
+- **New project** starts with a random seed and one default star field Layer, so the Preview is never empty.
+- **Starting view:** yaw 0.4, pitch 0.15, field of view 1.2 radians (about 69 degrees).
+- **Run in release mode** (documented in the README); there is no installer or packaging yet.
+- **Verified by running it:** the window launches on the GPU, shows the controls and a star field Preview. Clicking through every control and a full export from the window were not automated (egui has no test harness here); the export function itself is covered by tests.
