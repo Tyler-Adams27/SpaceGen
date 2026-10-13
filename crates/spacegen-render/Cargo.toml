@@ -1,0 +1,8 @@
+[package]
+name = "spacegen-render"
+version = "0.1.0"
+authors = ["Tyler Adams"]
+edition = "2024"
+
+[dependencies]
+spacegen-core = { version = "0.1.0", path = "../spacegen-core" }
