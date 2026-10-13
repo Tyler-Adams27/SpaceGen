@@ -180,6 +180,22 @@ fn consecutive_settings_changes_to_one_layer_undo_as_a_single_step_but_not_with_
 }
 
 #[test]
+fn each_seed_change_is_its_own_undo_step() {
+    let mut history = fresh();
+
+    history.set_seed(Seed(7));
+    history.set_seed(Seed(8));
+    assert_eq!(history.project().seed(), Seed(8));
+
+    history.undo();
+    assert_eq!(history.project().seed(), Seed(7));
+    history.undo();
+    assert_eq!(history.project().seed(), Seed(5));
+    history.redo();
+    assert_eq!(history.project().seed(), Seed(7));
+}
+
+#[test]
 fn history_keeps_only_the_last_100_undo_steps() {
     let mut history = fresh();
     for _ in 0..101 {

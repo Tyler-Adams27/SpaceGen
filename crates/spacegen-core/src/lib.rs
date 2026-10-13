@@ -243,6 +243,14 @@ impl Project {
         &self.layers
     }
 
+    pub fn seed(&self) -> Seed {
+        self.seed
+    }
+
+    pub fn set_seed(&mut self, seed: Seed) {
+        self.seed = seed;
+    }
+
     pub fn set_opacity(&mut self, layer: LayerId, opacity: f32) -> Result<(), EditError> {
         if !(0.0..=1.0).contains(&opacity) {
             return Err(EditError::InvalidOpacity { opacity });
@@ -462,6 +470,14 @@ impl History {
         self.edit(Some((layer, DragField::StarField)), |project| {
             project.set_star_field_settings(layer, settings)
         })
+    }
+
+    pub fn set_seed(&mut self, seed: Seed) {
+        self.edit(None, |project| {
+            project.set_seed(seed);
+            Ok(())
+        })
+        .expect("setting the seed cannot fail");
     }
 
     pub fn remove_layer(&mut self, layer: LayerId) -> Result<(), EditError> {
