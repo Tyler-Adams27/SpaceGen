@@ -21,6 +21,10 @@ The type of a Layer: star field, nebula, galaxy band, or sun. (Planets are defer
 A saved, reloadable document holding a Seed and a Layer stack.
 _Avoid_: preset, scene
 
+**History**:
+The undo/redo record wrapped around a Project. Each successful edit is one undo step (up to 100 are kept); consecutive opacity changes to the same Layer count as one step. A new edit discards the redo steps. Loading a Project starts a fresh, empty History.
+_Avoid_: changelog
+
 **Preview**:
 The live, interactive view of the Skybox that updates as parameters change.
 
