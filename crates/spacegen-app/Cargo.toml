@@ -5,3 +5,7 @@ authors = ["Tyler Adams"]
 edition = "2024"
 
 [dependencies]
+eframe = "0.36.2"
+rfd = "0.17.2"
+spacegen-core = { version = "0.1.0", path = "../spacegen-core" }
+spacegen-render = { version = "0.1.0", path = "../spacegen-render" }

@@ -27,6 +27,7 @@ pub struct SkyUniforms {
     down: [f32; 4],
     info: [u32; 4],
     pixel: [f32; 4],
+    band: [f32; 4],
     layers: [GpuLayer; MAX_LAYERS],
 }
 
@@ -93,8 +94,21 @@ impl SkyUniforms {
             down: pad(basis.down),
             info: [count as u32, mode, 0, 0],
             pixel: [pixel_angle, 0.0, 0.0, 0.0],
+            band: [0.0, 1.0, 0.0, 0.0],
             layers,
         }
+    }
+}
+
+impl SkyUniforms {
+    /// Restricts the pass to the rows between start and end, as fractions of the image height.
+    pub fn with_band(mut self, start: f32, end: f32) -> SkyUniforms {
+        self.band = [start, end, 0.0, 0.0];
+        self
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        bytemuck::bytes_of(self)
     }
 }
 

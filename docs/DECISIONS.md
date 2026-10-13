@@ -37,3 +37,12 @@ The user said: "from here on, you will have agency… just get me a MVP. Documen
 - **Radiance `.hdr`** is not offered; OpenEXR covers the HDRI requirement and Blender and the major engines read it.
 - **`image` crate** with only the `png`, `jpeg` and `exr` features, to keep compile time down.
 - **Look tuning:** star presence 0.45, brightness skew 9 after viewing renders; `examples/dump_sky.rs` renders a sample sky to PNG for this.
+
+### Memory limits and the app's building blocks (slice 10)
+
+- **Banded rendering.** wgpu's default maximum buffer is 256 MiB, but an 8192 x 8192 float Face reads back 1 GiB. `Renderer::render` therefore renders horizontal bands of about 64 MiB each (`BAND_BUDGET_BYTES`) and stitches them; the shader maps a pass's rows into the band range (`band` uniform). This is the tiling from the original plan, in one dimension. `with_max_band_rows` exists so tests can force many bands and prove the result is identical to one pass.
+- **Panorama width is capped at 8192** (`panorama_width`), so an 8K export is 8192 x 4096. Wider would need 2 GiB+ textures; revisit with a tiled panorama if needed.
+- **Star radius is capped at one third of a grid cell** (`1 / (3 * STAR_GRID)`). Found by a banding test: when the one-pixel floor made stars wider than a cell on very small renders (Faces under about 300 px), the 3-cell search clipped them and pixels on cell boundaries flipped between renders. Consequence: renders under about 300 px per Face show stars a little smaller than the pixel floor.
+- **Preview camera** (`camera_basis`): yaw from +Z toward +X, pitch up, vertical field of view; the Preview reuses the shader through a `FaceBasis`, so no separate preview shader exists.
+- **Randomize** lives in the app (`seed_source::fresh_seed`: clock plus counter through a SplitMix64 finalizer) so `spacegen-core` stays deterministic.
+- **App dependencies:** `eframe` 0.36 (pulls `wgpu` 30.0.1, the same version as `spacegen-render`) and `rfd` for native open/save/folder dialogs.

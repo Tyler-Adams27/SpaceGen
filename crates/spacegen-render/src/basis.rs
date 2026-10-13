@@ -15,6 +15,23 @@ impl FaceBasis {
     }
 }
 
+/// A perspective camera at the origin. `yaw` turns from +Z toward +X, `pitch` looks up
+/// from the horizon, `vertical_fov` is the full vertical field of view, all in radians.
+pub fn camera_basis(yaw: f32, pitch: f32, vertical_fov: f32, aspect: f32) -> FaceBasis {
+    let (sin_yaw, cos_yaw) = yaw.sin_cos();
+    let (sin_pitch, cos_pitch) = pitch.sin_cos();
+    let forward = [sin_yaw * cos_pitch, sin_pitch, cos_yaw * cos_pitch];
+    let right = [cos_yaw, 0.0, -sin_yaw];
+    let up = [-sin_yaw * sin_pitch, cos_pitch, -cos_yaw * sin_pitch];
+    let half_height = (vertical_fov / 2.0).tan();
+    let half_width = half_height * aspect;
+    FaceBasis {
+        origin: std::array::from_fn(|a| forward[a] - half_width * right[a] + half_height * up[a]),
+        right: std::array::from_fn(|a| 2.0 * half_width * right[a]),
+        down: std::array::from_fn(|a| -2.0 * half_height * up[a]),
+    }
+}
+
 pub fn face_basis(face: Face) -> FaceBasis {
     match face {
         Face::PositiveX => FaceBasis {

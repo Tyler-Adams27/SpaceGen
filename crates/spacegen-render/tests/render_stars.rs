@@ -125,6 +125,40 @@ fn the_equirectangular_panorama_is_twice_as_wide_as_tall_and_holds_stars() {
     assert!(lit_pixels(&image) > 0);
 }
 
+fn largest_difference(a: &FaceImage, b: &FaceImage) -> f32 {
+    assert_eq!((a.width(), a.height()), (b.width(), b.height()));
+    a.pixels()
+        .iter()
+        .zip(b.pixels())
+        .flat_map(|(p, q)| (0..4).map(move |c| (p[c] - q[c]).abs()))
+        .fold(0.0, f32::max)
+}
+
+#[test]
+fn rendering_in_bands_gives_the_same_image_as_rendering_in_one_pass() {
+    let Some(whole_renderer) = renderer() else { return };
+    let project = star_field_project(5);
+    let whole = whole_renderer.render_face(&project, Face::PositiveZ, 41).unwrap();
+    let banded_renderer = Renderer::software().unwrap().with_max_band_rows(7);
+
+    let banded = banded_renderer.render_face(&project, Face::PositiveZ, 41).unwrap();
+
+    assert!(lit_pixels(&whole) > 0);
+    assert!(largest_difference(&whole, &banded) < 1e-3);
+}
+
+#[test]
+fn bands_also_cover_the_panorama() {
+    let Some(whole_renderer) = renderer() else { return };
+    let project = star_field_project(5);
+    let whole = whole_renderer.render_equirectangular(&project, 90).unwrap();
+    let banded_renderer = Renderer::software().unwrap().with_max_band_rows(4);
+
+    let banded = banded_renderer.render_equirectangular(&project, 90).unwrap();
+
+    assert!(largest_difference(&whole, &banded) < 1e-3);
+}
+
 #[test]
 fn every_pixel_is_opaque() {
     let Some(renderer) = renderer() else { return };

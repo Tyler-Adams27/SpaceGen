@@ -1,2 +1,3 @@
-fn main() {}
+mod seed_source;
 
+fn main() {}

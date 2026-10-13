@@ -10,7 +10,7 @@ const PI: f32 = 3.1415927;
 const STAR_GRID: f32 = 60.0;          // grid cells per unit direction (star spacing)
 const STAR_PRESENCE_SCALE: f32 = 0.45; // chance a cell holds a star at density 1.0
 const STAR_MIN_RADIUS: f32 = 0.0012;  // angular radius (radians) at size 0.0
-const STAR_MAX_RADIUS: f32 = 0.0060;  // angular radius (radians) at size 1.0
+const STAR_MAX_RADIUS: f32 = 0.0055;  // angular radius (radians) at size 1.0; keep <= 1 / (3 * STAR_GRID)
 const STAR_PIXEL_FLOOR: f32 = 0.9;    // never smaller than this many pixels
 const STAR_BRIGHTNESS_BASE: f32 = 0.08;
 const STAR_BRIGHTNESS_RANGE: f32 = 4.0;
@@ -31,6 +31,7 @@ struct Globals {
     down: vec4<f32>,
     info: vec4<u32>,     // layer count, mode (0 = basis, 1 = equirectangular)
     pixel: vec4<f32>,    // angular size of one pixel in radians
+    band: vec4<f32>,     // the slice of the image this pass covers: v start, v end
     layers: array<Layer, 16>,
 }
 
@@ -99,7 +100,12 @@ fn star_layer(d: vec3<f32>, layer: Layer) -> vec3<f32> {
     }
 
     let presence = density * density * STAR_PRESENCE_SCALE;
-    let radius = max(mix(STAR_MIN_RADIUS, STAR_MAX_RADIUS, size), g.pixel.x * STAR_PIXEL_FLOOR);
+    // The three-cell search only finds a star within one grid cell of its centre, so the
+    // visible part (3 radii) must fit in a cell, however coarse the render is.
+    let radius = min(
+        max(mix(STAR_MIN_RADIUS, STAR_MAX_RADIUS, size), g.pixel.x * STAR_PIXEL_FLOOR),
+        1.0 / (3.0 * STAR_GRID),
+    );
     let base = vec3<i32>(floor(d * STAR_GRID));
     var light = vec3<f32>(0.0);
 
@@ -142,7 +148,8 @@ fn star_layer(d: vec3<f32>, layer: Layer) -> vec3<f32> {
 
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    let d = view_direction(in.uv);
+    let uv = vec2<f32>(in.uv.x, mix(g.band.x, g.band.y, in.uv.y));
+    let d = view_direction(uv);
     var color = vec3<f32>(0.0);
     let count = min(g.info.x, MAX_LAYERS);
     for (var i = 0u; i < count; i++) {

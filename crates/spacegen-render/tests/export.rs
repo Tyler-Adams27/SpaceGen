@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use spacegen_core::{EngineConvention, ImageFormat, LayerKind, Project, Seed};
-use spacegen_render::{ExportOptions, Renderer, export_skybox, linear_to_srgb};
+use spacegen_render::{ExportOptions, Renderer, export_skybox, linear_to_srgb, panorama_width};
 
 fn temp_dir(label: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("spacegen-test-{label}-{}", std::process::id()));
@@ -166,6 +166,14 @@ fn exporting_faces_writes_six_square_images_named_by_the_engine_convention() {
         let image = image::open(path).unwrap();
         assert_eq!((image.width(), image.height()), (16, 16));
     }
+}
+
+#[test]
+fn the_panorama_is_four_faces_wide_but_never_wider_than_8192() {
+    assert_eq!(panorama_width(512), 2048);
+    assert_eq!(panorama_width(2048), 8192);
+    assert_eq!(panorama_width(4096), 8192);
+    assert_eq!(panorama_width(8192), 8192);
 }
 
 #[test]

@@ -2,14 +2,16 @@ mod basis;
 mod export;
 mod sky;
 
-pub use basis::{FaceBasis, face_basis};
-pub use export::{ExportError, ExportOptions, export_skybox, linear_to_srgb};
+pub use basis::{FaceBasis, camera_basis, face_basis};
+pub use export::{ExportError, ExportOptions, export_skybox, linear_to_srgb, panorama_width};
 pub use sky::{MAX_LAYERS, Projection, SkyPipeline, SkyUniforms};
 
 use spacegen_core::{Face, Project};
 
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba32Float;
 const BYTES_PER_PIXEL: u32 = 16;
+/// How much of an image one GPU pass reads back at most, unless overridden.
+const BAND_BUDGET_BYTES: u32 = 64 * 1024 * 1024;
 
 /// A rendered image: `width * height` linear RGBA pixels, row by row from the top-left.
 #[derive(Debug, Clone, PartialEq)]
@@ -56,6 +58,7 @@ pub struct Renderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
     pipeline: SkyPipeline,
+    max_band_rows: Option<u32>,
 }
 
 impl Renderer {
@@ -85,7 +88,15 @@ impl Renderer {
             device,
             queue,
             pipeline,
+            max_band_rows: None,
         })
+    }
+
+    /// Renders at most this many rows per GPU pass. By default the band height is chosen so a
+    /// pass reads back about 64 MiB, which keeps 8K Faces inside the GPU's buffer limits.
+    pub fn with_max_band_rows(mut self, rows: u32) -> Renderer {
+        self.max_band_rows = Some(rows.max(1));
+        self
     }
 
     /// Renders one cubemap Face, `size` pixels square.
@@ -123,6 +134,37 @@ impl Renderer {
         width: u32,
         height: u32,
     ) -> Result<SkyImage, RenderError> {
+        let row_bytes = width * BYTES_PER_PIXEL;
+        let rows_per_band = self
+            .max_band_rows
+            .unwrap_or_else(|| (BAND_BUDGET_BYTES / row_bytes.max(1)).max(1))
+            .clamp(1, height.max(1));
+        let mut pixels = Vec::with_capacity((width * height) as usize);
+        let mut start = 0;
+        while start < height {
+            let rows = rows_per_band.min(height - start);
+            let band = uniforms.with_band(
+                start as f32 / height as f32,
+                (start + rows) as f32 / height as f32,
+            );
+            self.render_band(&band, width, rows, &mut pixels)?;
+            start += rows;
+        }
+        Ok(SkyImage {
+            width,
+            height,
+            pixels,
+        })
+    }
+
+    /// Renders one band of rows and appends its pixels.
+    fn render_band(
+        &self,
+        uniforms: &SkyUniforms,
+        width: u32,
+        height: u32,
+        pixels: &mut Vec<[f32; 4]>,
+    ) -> Result<(), RenderError> {
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("sky"),
             size: wgpu::Extent3d {
@@ -140,7 +182,7 @@ impl Renderer {
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         let (uniform_buffer, bind_group) = self.pipeline.create_uniform_binding(&self.device);
         self.queue
-            .write_buffer(&uniform_buffer, 0, bytemuck::bytes_of(uniforms));
+            .write_buffer(&uniform_buffer, 0, uniforms.as_bytes());
 
         // Rows in a texture-to-buffer copy must be padded to a 256-byte multiple.
         let row_bytes = width * BYTES_PER_PIXEL;
@@ -208,17 +250,12 @@ impl Renderer {
         let mapped = slice
             .get_mapped_range()
             .map_err(|error| RenderError(format!("GPU readback unavailable: {error}")))?;
-        let mut pixels = Vec::with_capacity((width * height) as usize);
         for row in mapped.chunks(padded_row_bytes as usize) {
             let floats: &[f32] = bytemuck::cast_slice(&row[..row_bytes as usize]);
             pixels.extend(floats.chunks_exact(4).map(|p| [p[0], p[1], p[2], p[3]]));
         }
         drop(mapped);
         readback.unmap();
-        Ok(SkyImage {
-            width,
-            height,
-            pixels,
-        })
+        Ok(())
     }
 }

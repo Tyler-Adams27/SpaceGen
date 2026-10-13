@@ -15,6 +15,15 @@ const FACES: [Face; 6] = [
     Face::NegativeZ,
 ];
 
+/// The widest panorama the MVP exports; wider would need more GPU memory than is safe to assume.
+const MAX_PANORAMA_WIDTH: u32 = 8192;
+
+/// Width of the exported panorama: four Faces wide (matching the Faces' pixel density at the
+/// equator), capped at 8192 pixels.
+pub fn panorama_width(face_size: u32) -> u32 {
+    face_size.saturating_mul(4).min(MAX_PANORAMA_WIDTH)
+}
+
 /// Encodes linear light (clamped to 0..1) with the sRGB transfer curve.
 pub fn linear_to_srgb(linear: f32) -> f32 {
     // f64 so that pure white stays exactly 1.0 after the round trip through the curve.
@@ -112,7 +121,7 @@ pub fn export_skybox(
     }
     if options.panorama || options.hdri {
         progress(written.len(), total);
-        let image = renderer.render_equirectangular(project, options.face_size * 4)?;
+        let image = renderer.render_equirectangular(project, panorama_width(options.face_size))?;
         if options.panorama {
             let path = dir.join(format!(
                 "{}_panorama.{}",
