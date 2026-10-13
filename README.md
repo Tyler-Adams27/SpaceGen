@@ -3,6 +3,12 @@
 A desktop app that generates procedural space skyboxes for game engines and 3D tools.
 Edit a sky live, then export it as six cube faces, an equirectangular panorama and an HDRI.
 
+## About this project
+
+This project is inspired by EVE Online's skyboxes.
+
+Whilst I am using Claude to code it, I have put strict guardrails and quality control in place, including test-driven development (TDD). Every change starts with a failing test, and tests that pass straight away are checked by deliberately breaking the code to prove they can fail. Decisions are written down in `docs/`, and the working rules are in `CLAUDE.md`.
+
 ## Run it
 
 You need [Rust](https://rustup.rs) (the stable toolchain, with the MSVC build tools on Windows).
