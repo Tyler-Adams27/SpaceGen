@@ -67,3 +67,7 @@ The user said: "from here on, you will have agency… just get me a MVP. Documen
 - **Layer uniform grew** to 64 bytes (`kind`, `color_a`+opacity, `color_b`) to carry both kinds in one array; still at most 16 visible Layers.
 - **Faces versus panorama test:** `render_consistency.rs` looks each panorama pixel up in the matching Face using the Vulkan formulas and compares per Face. A first, weaker "seam" test and a whole-image average both let a mirrored Face through; the per-Face mean (about 0.01 normally, 0.10 or more for a broken Face) is what caught the mutations.
 - **Starter project** is now a nebula under a star field.
+
+### Verified by the user
+
+- **Blender import works** (reported by the user): the exported HDRI/panorama loads in Blender. Not yet reported: whether the sky is upright in Blender (our panorama is Y-up with the centre toward +Z; Blender is Z-up), and whether the six Faces tile correctly in Unity, Unreal or Godot. Open items in `docs/research/engine-cubemap-conventions.md` stay open until those are checked.
