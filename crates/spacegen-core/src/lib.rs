@@ -30,19 +30,96 @@ pub enum BlendMode {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Layer {
     id: LayerId,
-    kind: LayerKind,
+    settings: LayerSettings,
     blend: BlendMode,
     opacity: f32,
     visible: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct StarFieldSettings {
+    pub density: f32,
+    pub brightness: f32,
+    pub size: f32,
+    pub color_variation: f32,
+    pub tint: [f32; 3],
+}
+
+impl StarFieldSettings {
+    fn validate(&self) -> Result<(), EditError> {
+        let fields = [
+            ("density", self.density),
+            ("brightness", self.brightness),
+            ("size", self.size),
+            ("color_variation", self.color_variation),
+            ("tint", self.tint[0]),
+            ("tint", self.tint[1]),
+            ("tint", self.tint[2]),
+        ];
+        for (field, value) in fields {
+            if !(0.0..=1.0).contains(&value) {
+                return Err(EditError::InvalidSetting { field, value });
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Default for StarFieldSettings {
+    fn default() -> Self {
+        StarFieldSettings {
+            density: 0.5,
+            brightness: 0.5,
+            size: 0.5,
+            color_variation: 0.5,
+            tint: [1.0, 1.0, 1.0],
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum LayerSettings {
+    StarField(StarFieldSettings),
+    Nebula,
+    GalaxyBand,
+    Sun,
+}
+
+impl LayerSettings {
+    fn default_for(kind: LayerKind) -> LayerSettings {
+        match kind {
+            LayerKind::StarField => LayerSettings::StarField(StarFieldSettings::default()),
+            LayerKind::Nebula => LayerSettings::Nebula,
+            LayerKind::GalaxyBand => LayerSettings::GalaxyBand,
+            LayerKind::Sun => LayerSettings::Sun,
+        }
+    }
+
+    fn kind(&self) -> LayerKind {
+        match self {
+            LayerSettings::StarField(_) => LayerKind::StarField,
+            LayerSettings::Nebula => LayerKind::Nebula,
+            LayerSettings::GalaxyBand => LayerKind::GalaxyBand,
+            LayerSettings::Sun => LayerKind::Sun,
+        }
+    }
+}
+
 impl Layer {
+    pub fn star_field_settings(&self) -> Option<&StarFieldSettings> {
+        match &self.settings {
+            LayerSettings::StarField(settings) => Some(settings),
+            _ => None,
+        }
+    }
+
     pub fn id(&self) -> LayerId {
         self.id
     }
 
     pub fn kind(&self) -> LayerKind {
-        self.kind
+        self.settings.kind()
     }
 
     pub fn blend(&self) -> BlendMode {
@@ -71,6 +148,11 @@ pub enum ProjectError {
     Json(serde_json::Error),
     UnsupportedVersion { found: u32, supported: u32 },
     InvalidOpacity { layer: LayerId, opacity: f32 },
+    InvalidSetting {
+        layer: LayerId,
+        field: &'static str,
+        value: f32,
+    },
 }
 
 impl std::fmt::Display for ProjectError {
@@ -80,6 +162,11 @@ impl std::fmt::Display for ProjectError {
             ProjectError::UnsupportedVersion { found, supported } => write!(
                 f,
                 "project file uses format version {found}, but this version of SpaceGen only supports up to format version {supported}"
+            ),
+            ProjectError::InvalidSetting { layer, field, value } => write!(
+                f,
+                "layer {} has {field} value {value}, which is outside 0.0 to 1.0",
+                layer.0
             ),
             ProjectError::InvalidOpacity { layer, opacity } => write!(
                 f,
@@ -97,11 +184,19 @@ pub enum EditError {
     InvalidOpacity { opacity: f32 },
     UnknownLayer { layer: LayerId },
     IndexOutOfRange { index: usize, layer_count: usize },
+    InvalidSetting { field: &'static str, value: f32 },
+    WrongKind { layer: LayerId, expected: &'static str },
 }
 
 impl std::fmt::Display for EditError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            EditError::WrongKind { layer, expected } => {
+                write!(f, "layer {} is not a {expected} layer", layer.0)
+            }
+            EditError::InvalidSetting { field, value } => {
+                write!(f, "{field} value {value} is outside 0.0 to 1.0")
+            }
             EditError::IndexOutOfRange { index, layer_count } => write!(
                 f,
                 "index {index} is out of range for a stack of {layer_count} layers"
@@ -136,7 +231,7 @@ impl Project {
         self.next_layer_id += 1;
         self.layers.push(Layer {
             id,
-            kind,
+            settings: LayerSettings::default_for(kind),
             blend: BlendMode::Additive,
             opacity: 1.0,
             visible: true,
@@ -158,6 +253,23 @@ impl Project {
 
     pub fn set_blend(&mut self, layer: LayerId, blend: BlendMode) -> Result<(), EditError> {
         self.layer_mut(layer)?.blend = blend;
+        Ok(())
+    }
+
+    pub fn set_star_field_settings(
+        &mut self,
+        layer: LayerId,
+        settings: StarFieldSettings,
+    ) -> Result<(), EditError> {
+        settings.validate()?;
+        let target = self.layer_mut(layer)?;
+        if !matches!(target.settings, LayerSettings::StarField(_)) {
+            return Err(EditError::WrongKind {
+                layer,
+                expected: "star field",
+            });
+        }
+        target.settings = LayerSettings::StarField(settings);
         Ok(())
     }
 
@@ -229,6 +341,15 @@ impl Project {
                     opacity: layer.opacity,
                 });
             }
+            if let LayerSettings::StarField(settings) = &layer.settings {
+                if let Err(EditError::InvalidSetting { field, value }) = settings.validate() {
+                    return Err(ProjectError::InvalidSetting {
+                        layer: layer.id,
+                        field,
+                        value,
+                    });
+                }
+            }
         }
         Ok(project)
     }
@@ -287,11 +408,17 @@ impl EngineConvention {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DragField {
+    Opacity,
+    StarField,
+}
+
 pub struct History {
     project: Project,
     undo_stack: Vec<Project>,
     redo_stack: Vec<Project>,
-    last_drag: Option<LayerId>,
+    last_drag: Option<(LayerId, DragField)>,
 }
 
 impl History {
@@ -314,7 +441,9 @@ impl History {
     }
 
     pub fn set_opacity(&mut self, layer: LayerId, opacity: f32) -> Result<(), EditError> {
-        self.edit(Some(layer), |project| project.set_opacity(layer, opacity))
+        self.edit(Some((layer, DragField::Opacity)), |project| {
+            project.set_opacity(layer, opacity)
+        })
     }
 
     pub fn set_blend(&mut self, layer: LayerId, blend: BlendMode) -> Result<(), EditError> {
@@ -323,6 +452,16 @@ impl History {
 
     pub fn set_visible(&mut self, layer: LayerId, visible: bool) -> Result<(), EditError> {
         self.edit(None, |project| project.set_visible(layer, visible))
+    }
+
+    pub fn set_star_field_settings(
+        &mut self,
+        layer: LayerId,
+        settings: StarFieldSettings,
+    ) -> Result<(), EditError> {
+        self.edit(Some((layer, DragField::StarField)), |project| {
+            project.set_star_field_settings(layer, settings)
+        })
     }
 
     pub fn remove_layer(&mut self, layer: LayerId) -> Result<(), EditError> {
@@ -338,11 +477,11 @@ impl History {
     }
 
     /// Runs `change` and, only if it succeeds, records the prior state as an undo step.
-    /// An edit whose `drag_of` names the same Layer as the previous edit's joins that
+    /// An edit whose `drag_of` names the same Layer and field as the previous edit's joins that
     /// edit's undo step instead of starting a new one.
     fn edit<T>(
         &mut self,
-        drag_of: Option<LayerId>,
+        drag_of: Option<(LayerId, DragField)>,
         change: impl FnOnce(&mut Project) -> Result<T, EditError>,
     ) -> Result<T, EditError> {
         let before = self.project.clone();

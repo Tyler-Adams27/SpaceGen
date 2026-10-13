@@ -1,4 +1,4 @@
-use spacegen_core::{BlendMode, History, LayerId, LayerKind, Project, Seed};
+use spacegen_core::{BlendMode, History, LayerId, LayerKind, Project, Seed, StarFieldSettings};
 
 fn fresh() -> History {
     History::new(Project::new(Seed(5)))
@@ -135,6 +135,48 @@ fn a_loaded_project_starts_with_an_empty_history() {
     assert!(!history.can_redo());
     history.undo();
     assert_eq!(history.project().layers().len(), 1);
+}
+
+#[test]
+fn undo_and_redo_cover_star_field_settings() {
+    let mut history = fresh();
+    let layer = history.add_layer(LayerKind::StarField);
+    let chosen = StarFieldSettings {
+        density: 0.9,
+        ..StarFieldSettings::default()
+    };
+
+    history.set_star_field_settings(layer, chosen).unwrap();
+    assert_eq!(history.project().layers()[0].star_field_settings(), Some(&chosen));
+
+    history.undo();
+    assert_eq!(
+        history.project().layers()[0].star_field_settings(),
+        Some(&StarFieldSettings::default())
+    );
+    history.redo();
+    assert_eq!(history.project().layers()[0].star_field_settings(), Some(&chosen));
+}
+
+#[test]
+fn consecutive_settings_changes_to_one_layer_undo_as_a_single_step_but_not_with_opacity() {
+    let mut history = fresh();
+    let layer = history.add_layer(LayerKind::StarField);
+    let with_density = |density| StarFieldSettings {
+        density,
+        ..StarFieldSettings::default()
+    };
+
+    history.set_opacity(layer, 0.4).unwrap();
+    history.set_star_field_settings(layer, with_density(0.6)).unwrap();
+    history.set_star_field_settings(layer, with_density(0.7)).unwrap();
+    history.set_star_field_settings(layer, with_density(0.8)).unwrap();
+
+    history.undo();
+    assert_eq!(history.project().layers()[0].star_field_settings().unwrap().density, 0.5);
+    assert_eq!(history.project().layers()[0].opacity(), 0.4);
+    history.undo();
+    assert_eq!(history.project().layers()[0].opacity(), 1.0);
 }
 
 #[test]
