@@ -72,6 +72,7 @@ pub struct SpacegenApp {
 
 fn starter_project() -> Project {
     let mut project = Project::new(fresh_seed());
+    project.add_layer(LayerKind::Nebula);
     project.add_layer(LayerKind::StarField);
     project
 }
@@ -392,9 +393,14 @@ impl SpacegenApp {
                 }
             });
         }
-        if ui.button("Add star field").clicked() {
-            self.selected = Some(self.history.add_layer(LayerKind::StarField));
-        }
+        ui.horizontal(|ui| {
+            if ui.button("Add star field").clicked() {
+                self.selected = Some(self.history.add_layer(LayerKind::StarField));
+            }
+            if ui.button("Add nebula").clicked() {
+                self.selected = Some(self.history.add_layer(LayerKind::Nebula));
+            }
+        });
     }
 
     fn selected_layer(&mut self, ui: &mut egui::Ui) {
@@ -404,11 +410,12 @@ impl SpacegenApp {
         let Some(layer) = self.history.project().layers().iter().find(|l| l.id() == id) else {
             return;
         };
-        let (kind, blend, opacity, star) = (
+        let (kind, blend, opacity, star, nebula) = (
             layer.kind(),
             layer.blend(),
             layer.opacity(),
             layer.star_field_settings().copied(),
+            layer.nebula_settings().copied(),
         );
         ui.heading(format!("{} #{}", kind_name(kind), id.0));
 
@@ -433,6 +440,22 @@ impl SpacegenApp {
             self.report(result);
         }
 
+        if let Some(mut settings) = nebula {
+            let mut changed = false;
+            changed |= unit_slider(ui, &mut settings.coverage, "Coverage");
+            changed |= unit_slider(ui, &mut settings.scale, "Cloud size");
+            changed |= unit_slider(ui, &mut settings.brightness, "Brightness");
+            ui.horizontal(|ui| {
+                ui.label("Colors");
+                changed |= ui.color_edit_button_rgb(&mut settings.color_a).changed();
+                changed |= ui.color_edit_button_rgb(&mut settings.color_b).changed();
+            });
+            if changed {
+                let result = self.history.set_nebula_settings(id, settings);
+                self.report(result);
+            }
+            return;
+        }
         let Some(mut settings) = star else {
             ui.label("This layer kind has no settings yet and is not drawn.");
             return;

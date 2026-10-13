@@ -56,12 +56,33 @@ impl StarFieldSettings {
             ("tint", self.tint[1]),
             ("tint", self.tint[2]),
         ];
-        for (field, value) in fields {
-            if !(0.0..=1.0).contains(&value) {
-                return Err(EditError::InvalidSetting { field, value });
-            }
+        check_unit_range(&fields)
+    }
+}
+
+/// Every value must lie in 0.0 to 1.0 (NaN fails); names the first field that does not.
+fn check_unit_range(fields: &[(&'static str, f32)]) -> Result<(), EditError> {
+    for &(field, value) in fields {
+        if !(0.0..=1.0).contains(&value) {
+            return Err(EditError::InvalidSetting { field, value });
         }
-        Ok(())
+    }
+    Ok(())
+}
+
+impl NebulaSettings {
+    fn validate(&self) -> Result<(), EditError> {
+        check_unit_range(&[
+            ("coverage", self.coverage),
+            ("scale", self.scale),
+            ("brightness", self.brightness),
+            ("color_a", self.color_a[0]),
+            ("color_a", self.color_a[1]),
+            ("color_a", self.color_a[2]),
+            ("color_b", self.color_b[0]),
+            ("color_b", self.color_b[1]),
+            ("color_b", self.color_b[2]),
+        ])
     }
 }
 
@@ -81,7 +102,7 @@ impl Default for StarFieldSettings {
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum LayerSettings {
     StarField(StarFieldSettings),
-    Nebula,
+    Nebula(NebulaSettings),
     GalaxyBand,
     Sun,
 }
@@ -90,7 +111,7 @@ impl LayerSettings {
     fn default_for(kind: LayerKind) -> LayerSettings {
         match kind {
             LayerKind::StarField => LayerSettings::StarField(StarFieldSettings::default()),
-            LayerKind::Nebula => LayerSettings::Nebula,
+            LayerKind::Nebula => LayerSettings::Nebula(NebulaSettings::default()),
             LayerKind::GalaxyBand => LayerSettings::GalaxyBand,
             LayerKind::Sun => LayerSettings::Sun,
         }
@@ -99,14 +120,42 @@ impl LayerSettings {
     fn kind(&self) -> LayerKind {
         match self {
             LayerSettings::StarField(_) => LayerKind::StarField,
-            LayerSettings::Nebula => LayerKind::Nebula,
+            LayerSettings::Nebula(_) => LayerKind::Nebula,
             LayerSettings::GalaxyBand => LayerKind::GalaxyBand,
             LayerSettings::Sun => LayerKind::Sun,
         }
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct NebulaSettings {
+    pub coverage: f32,
+    pub scale: f32,
+    pub brightness: f32,
+    pub color_a: [f32; 3],
+    pub color_b: [f32; 3],
+}
+
+impl Default for NebulaSettings {
+    fn default() -> Self {
+        NebulaSettings {
+            coverage: 0.5,
+            scale: 0.5,
+            brightness: 0.5,
+            color_a: [0.2, 0.4, 1.0],
+            color_b: [1.0, 0.3, 0.6],
+        }
+    }
+}
+
 impl Layer {
+    pub fn nebula_settings(&self) -> Option<&NebulaSettings> {
+        match &self.settings {
+            LayerSettings::Nebula(settings) => Some(settings),
+            _ => None,
+        }
+    }
+
     pub fn star_field_settings(&self) -> Option<&StarFieldSettings> {
         match &self.settings {
             LayerSettings::StarField(settings) => Some(settings),
@@ -264,6 +313,23 @@ impl Project {
         Ok(())
     }
 
+    pub fn set_nebula_settings(
+        &mut self,
+        layer: LayerId,
+        settings: NebulaSettings,
+    ) -> Result<(), EditError> {
+        settings.validate()?;
+        let target = self.layer_mut(layer)?;
+        if !matches!(target.settings, LayerSettings::Nebula(_)) {
+            return Err(EditError::WrongKind {
+                layer,
+                expected: "nebula",
+            });
+        }
+        target.settings = LayerSettings::Nebula(settings);
+        Ok(())
+    }
+
     pub fn set_star_field_settings(
         &mut self,
         layer: LayerId,
@@ -349,14 +415,17 @@ impl Project {
                     opacity: layer.opacity,
                 });
             }
-            if let LayerSettings::StarField(settings) = &layer.settings {
-                if let Err(EditError::InvalidSetting { field, value }) = settings.validate() {
-                    return Err(ProjectError::InvalidSetting {
-                        layer: layer.id,
-                        field,
-                        value,
-                    });
-                }
+            let checked = match &layer.settings {
+                LayerSettings::StarField(settings) => settings.validate(),
+                LayerSettings::Nebula(settings) => settings.validate(),
+                LayerSettings::GalaxyBand | LayerSettings::Sun => Ok(()),
+            };
+            if let Err(EditError::InvalidSetting { field, value }) = checked {
+                return Err(ProjectError::InvalidSetting {
+                    layer: layer.id,
+                    field,
+                    value,
+                });
             }
         }
         Ok(project)
@@ -420,6 +489,7 @@ impl EngineConvention {
 enum DragField {
     Opacity,
     StarField,
+    Nebula,
 }
 
 pub struct History {
@@ -469,6 +539,16 @@ impl History {
     ) -> Result<(), EditError> {
         self.edit(Some((layer, DragField::StarField)), |project| {
             project.set_star_field_settings(layer, settings)
+        })
+    }
+
+    pub fn set_nebula_settings(
+        &mut self,
+        layer: LayerId,
+        settings: NebulaSettings,
+    ) -> Result<(), EditError> {
+        self.edit(Some((layer, DragField::Nebula)), |project| {
+            project.set_nebula_settings(layer, settings)
         })
     }
 

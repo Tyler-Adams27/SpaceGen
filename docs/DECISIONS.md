@@ -58,3 +58,12 @@ The user said: "from here on, you will have agency… just get me a MVP. Documen
 - **Starting view:** yaw 0.4, pitch 0.15, field of view 1.2 radians (about 69 degrees).
 - **Run in release mode** (documented in the README); there is no installer or packaging yet.
 - **Verified by running it:** the window launches on the GPU, shows the controls and a star field Preview. Clicking through every control and a full export from the window were not automated (egui has no test harness here); the export function itself is covered by tests.
+
+### Nebula Layer (slice 12)
+
+- **Why now:** the original brief (Q2) named nebulae, and a sky of only dots reads as a placeholder; one cloud kind makes the MVP look like space. Galaxy band and sun stay undrawn.
+- **Settings:** `coverage`, `scale`, `brightness`, `color_a`, `color_b`, all 0.0 to 1.0, defaults 0.5 and a blue (0.2, 0.4, 1.0) to pink (1.0, 0.3, 0.6) palette. Same validation, save/load, undo and drag-merge rules as star fields.
+- **Algorithm:** 6-octave value-noise fbm on the 3D view direction (so it is seamless across Faces and the panorama), thresholded by coverage, with a second slower noise choosing between the two colors. Same integer hash as the stars, so it is deterministic per Seed. All look constants sit at the top of `sky.wgsl`.
+- **Layer uniform grew** to 64 bytes (`kind`, `color_a`+opacity, `color_b`) to carry both kinds in one array; still at most 16 visible Layers.
+- **Faces versus panorama test:** `render_consistency.rs` looks each panorama pixel up in the matching Face using the Vulkan formulas and compares per Face. A first, weaker "seam" test and a whole-image average both let a mirrored Face through; the per-Face mean (about 0.01 normally, 0.10 or more for a broken Face) is what caught the mutations.
+- **Starter project** is now a nebula under a star field.

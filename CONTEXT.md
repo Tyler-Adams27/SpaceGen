@@ -18,7 +18,7 @@ _Avoid_: effect, object
 The type of a Layer: star field, nebula, galaxy band, or sun. (Planets are deferred.)
 
 **Layer settings**:
-The parameters specific to a Layer's kind, as opposed to the settings every Layer has (blend mode, opacity, visibility). Star field settings are density, brightness, size, color variation and a tint, each normalized 0.0 to 1.0 (tint per channel). Nebula, galaxy band and sun Layers have no settings yet.
+The parameters specific to a Layer's kind, as opposed to the settings every Layer has (blend mode, opacity, visibility). Star field settings are density, brightness, size, color variation and a tint, each normalized 0.0 to 1.0 (tint per channel). Nebula settings are coverage, cloud size (scale), brightness and two colors (A and B) that the clouds blend between, each normalized 0.0 to 1.0. Galaxy band and sun Layers have no settings yet and are not drawn.
 
 **Project**:
 A saved, reloadable document holding a Seed and a Layer stack.

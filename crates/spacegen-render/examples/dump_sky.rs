@@ -13,6 +13,7 @@ fn main() {
 
     let renderer = Renderer::gpu().expect("no GPU adapter");
     let mut project = Project::new(Seed(2024));
+    project.add_layer(LayerKind::Nebula);
     project.add_layer(LayerKind::StarField);
     let options = ExportOptions {
         name: "sky".to_string(),

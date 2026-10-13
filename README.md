@@ -18,7 +18,7 @@ Use `--release`: the sky is drawn on the GPU, but unoptimized builds make the wi
 - **Look around** in the Preview: drag to turn, scroll to zoom.
 - **Seed** decides the sky. Type one or press *Randomize*; the same seed and settings always give the same sky.
 - **Layers** stack bottom to top. Each has visibility, opacity and a blend mode (additive or screen).
-  *Star field* has density, brightness, star size, color variety and a tint.
+  *Star field* has density, brightness, star size, color variety and a tint; *Nebula* has coverage, cloud size, brightness and two colors.
 - **Undo / Redo** (Ctrl+Z, Ctrl+Y or Ctrl+Shift+Z) cover every edit. **Save** (Ctrl+S) writes a `.spacegen` file.
 - **Export** writes into a folder you choose:
   - six cube faces named for Unity, Unreal or Godot, as 16-bit PNG or JPEG, 512 to 8192 pixels;

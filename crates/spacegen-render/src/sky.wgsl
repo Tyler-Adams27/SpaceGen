@@ -15,14 +15,21 @@ const STAR_PIXEL_FLOOR: f32 = 0.9;    // never smaller than this many pixels
 const STAR_BRIGHTNESS_BASE: f32 = 0.08;
 const STAR_BRIGHTNESS_RANGE: f32 = 4.0;
 const STAR_BRIGHTNESS_SKEW: f32 = 9.0; // higher = fewer bright stars
+const NEBULA_MIN_FREQUENCY: f32 = 1.2;  // noise features across the sky at scale 0.0
+const NEBULA_MAX_FREQUENCY: f32 = 7.0;  // ... and at scale 1.0
+const NEBULA_THRESHOLD_FULL: f32 = 0.30; // cloud cut-off at coverage 1.0 (lower = more cloud)
+const NEBULA_THRESHOLD_NONE: f32 = 0.85; // cloud cut-off at coverage 0.0
+const NEBULA_SOFTNESS: f32 = 0.30;       // how gradually cloud fades in above the cut-off
+const NEBULA_GAIN: f32 = 0.9;            // overall nebula brightness at brightness 1.0
 // ----------------------------------------------------------------------------
 
 struct Layer {
     seed: vec2<u32>,
     blend: u32,          // 0 = additive, 1 = screen
-    pad: u32,
-    params: vec4<f32>,   // density, brightness, size, color_variation
-    tint_opacity: vec4<f32>,
+    kind: u32,           // 0 = star field, 1 = nebula
+    params: vec4<f32>,   // stars: density, brightness, size, color variety; nebula: coverage, scale, brightness
+    color_a: vec4<f32>,  // stars: tint; nebula: first color; w = Layer opacity
+    color_b: vec4<f32>,  // nebula: second color
 }
 
 struct Globals {
@@ -143,9 +150,63 @@ fn star_layer(d: vec3<f32>, layer: Layer) -> vec3<f32> {
             }
         }
     }
-    return light * layer.tint_opacity.xyz;
+    return light * layer.color_a.xyz;
 }
 
+fn lattice(p: vec3<i32>, seed: vec2<u32>) -> f32 {
+    var h = pcg(bitcast<u32>(p.x) ^ seed.x);
+    h = pcg(h ^ bitcast<u32>(p.y) ^ seed.y);
+    h = pcg(h ^ bitcast<u32>(p.z));
+    return rand01(h);
+}
+
+fn value_noise(p: vec3<f32>, seed: vec2<u32>) -> f32 {
+    let cell = vec3<i32>(floor(p));
+    let f = fract(p);
+    let s = f * f * (3.0 - 2.0 * f);
+    let c000 = lattice(cell, seed);
+    let c100 = lattice(cell + vec3<i32>(1, 0, 0), seed);
+    let c010 = lattice(cell + vec3<i32>(0, 1, 0), seed);
+    let c110 = lattice(cell + vec3<i32>(1, 1, 0), seed);
+    let c001 = lattice(cell + vec3<i32>(0, 0, 1), seed);
+    let c101 = lattice(cell + vec3<i32>(1, 0, 1), seed);
+    let c011 = lattice(cell + vec3<i32>(0, 1, 1), seed);
+    let c111 = lattice(cell + vec3<i32>(1, 1, 1), seed);
+    let x00 = mix(c000, c100, s.x);
+    let x10 = mix(c010, c110, s.x);
+    let x01 = mix(c001, c101, s.x);
+    let x11 = mix(c011, c111, s.x);
+    return mix(mix(x00, x10, s.y), mix(x01, x11, s.y), s.z);
+}
+
+fn fbm(p: vec3<f32>, seed: vec2<u32>) -> f32 {
+    var sum = 0.0;
+    var amplitude = 0.5;
+    var q = p;
+    for (var octave = 0; octave < 6; octave++) {
+        sum += amplitude * value_noise(q, seed);
+        q = q * 2.03 + vec3<f32>(17.1, 9.7, 31.3);
+        amplitude *= 0.5;
+    }
+    return sum;
+}
+
+fn nebula_layer(d: vec3<f32>, layer: Layer) -> vec3<f32> {
+    let coverage = layer.params.x;
+    let scale = layer.params.y;
+    let brightness = layer.params.z;
+    if (coverage <= 0.0 || brightness <= 0.0) {
+        return vec3<f32>(0.0);
+    }
+    let p = d * mix(NEBULA_MIN_FREQUENCY, NEBULA_MAX_FREQUENCY, scale);
+    let density = fbm(p, layer.seed);
+    let threshold = mix(NEBULA_THRESHOLD_NONE, NEBULA_THRESHOLD_FULL, coverage);
+    let cloud = smoothstep(threshold, threshold + NEBULA_SOFTNESS, density);
+    // A second, slower noise field decides where the gas is color A or color B.
+    let tone = fbm(p * 0.6 + vec3<f32>(5.2, 1.3, 8.1), layer.seed ^ vec2<u32>(0x68E31DA4u, 0xB5297A4Du));
+    let color = mix(layer.color_a.xyz, layer.color_b.xyz, smoothstep(0.3, 0.7, tone));
+    return color * cloud * cloud * brightness * NEBULA_GAIN;
+}
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let uv = vec2<f32>(in.uv.x, mix(g.band.x, g.band.y, in.uv.y));
@@ -154,7 +215,13 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let count = min(g.info.x, MAX_LAYERS);
     for (var i = 0u; i < count; i++) {
         let layer = g.layers[i];
-        let light = star_layer(d, layer) * layer.tint_opacity.w;
+        var light = vec3<f32>(0.0);
+        if (layer.kind == 1u) {
+            light = nebula_layer(d, layer);
+        } else {
+            light = star_layer(d, layer);
+        }
+        light = light * layer.color_a.w;
         if (layer.blend == 1u) {
             color = vec3<f32>(1.0) - (vec3<f32>(1.0) - color) * (vec3<f32>(1.0) - clamp(light, vec3<f32>(0.0), vec3<f32>(1.0)));
         } else {

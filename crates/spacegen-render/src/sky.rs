@@ -13,10 +13,19 @@ pub const MAX_LAYERS: usize = 16;
 struct GpuLayer {
     seed: [u32; 2],
     blend: u32,
-    pad: u32,
+    /// 0 = star field, 1 = nebula.
+    kind: u32,
+    /// Star field: density, brightness, size, color variation.
+    /// Nebula: coverage, scale, brightness, unused.
     params: [f32; 4],
-    tint_opacity: [f32; 4],
+    /// Star field tint, or nebula color A, in rgb; the Layer's opacity in w.
+    color_a_opacity: [f32; 4],
+    /// Nebula color B in rgb; unused for stars.
+    color_b: [f32; 4],
 }
+
+const KIND_STAR_FIELD: u32 = 0;
+const KIND_NEBULA: u32 = 1;
 
 /// Mirrors `Globals` in `sky.wgsl`.
 #[repr(C)]
@@ -46,33 +55,43 @@ impl SkyUniforms {
         let mut layers = [GpuLayer::zeroed(); MAX_LAYERS];
         let mut count = 0;
         for layer in project.layers() {
-            let Some(settings) = layer.star_field_settings() else {
-                continue;
-            };
             if !layer.visible() || count == MAX_LAYERS {
                 continue;
             }
             let seed = project.seed().layer_seed(layer.id()).0;
-            layers[count] = GpuLayer {
-                seed: [seed as u32, (seed >> 32) as u32],
-                blend: match layer.blend() {
-                    BlendMode::Additive => 0,
-                    BlendMode::Screen => 1,
-                },
-                pad: 0,
-                params: [
-                    settings.density,
-                    settings.brightness,
-                    settings.size,
-                    settings.color_variation,
-                ],
-                tint_opacity: [
-                    settings.tint[0],
-                    settings.tint[1],
-                    settings.tint[2],
-                    layer.opacity(),
-                ],
+            let blend = match layer.blend() {
+                BlendMode::Additive => 0,
+                BlendMode::Screen => 1,
             };
+            let rgb_opacity = |rgb: [f32; 3]| [rgb[0], rgb[1], rgb[2], layer.opacity()];
+            let common = GpuLayer {
+                seed: [seed as u32, (seed >> 32) as u32],
+                blend,
+                ..GpuLayer::zeroed()
+            };
+            if let Some(stars) = layer.star_field_settings() {
+                layers[count] = GpuLayer {
+                    kind: KIND_STAR_FIELD,
+                    params: [
+                        stars.density,
+                        stars.brightness,
+                        stars.size,
+                        stars.color_variation,
+                    ],
+                    color_a_opacity: rgb_opacity(stars.tint),
+                    ..common
+                };
+            } else if let Some(nebula) = layer.nebula_settings() {
+                layers[count] = GpuLayer {
+                    kind: KIND_NEBULA,
+                    params: [nebula.coverage, nebula.scale, nebula.brightness, 0.0],
+                    color_a_opacity: rgb_opacity(nebula.color_a),
+                    color_b: [nebula.color_b[0], nebula.color_b[1], nebula.color_b[2], 0.0],
+                    ..common
+                };
+            } else {
+                continue;
+            }
             count += 1;
         }
 
