@@ -27,12 +27,34 @@ pub enum BlendMode {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-struct Layer {
+pub struct Layer {
     id: LayerId,
     kind: LayerKind,
     blend: BlendMode,
     opacity: f32,
     visible: bool,
+}
+
+impl Layer {
+    pub fn id(&self) -> LayerId {
+        self.id
+    }
+
+    pub fn kind(&self) -> LayerKind {
+        self.kind
+    }
+
+    pub fn blend(&self) -> BlendMode {
+        self.blend
+    }
+
+    pub fn opacity(&self) -> f32 {
+        self.opacity
+    }
+
+    pub fn visible(&self) -> bool {
+        self.visible
+    }
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -69,6 +91,30 @@ impl std::fmt::Display for ProjectError {
 
 impl std::error::Error for ProjectError {}
 
+#[derive(Debug, PartialEq)]
+pub enum EditError {
+    InvalidOpacity { opacity: f32 },
+    UnknownLayer { layer: LayerId },
+    IndexOutOfRange { index: usize, layer_count: usize },
+}
+
+impl std::fmt::Display for EditError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EditError::IndexOutOfRange { index, layer_count } => write!(
+                f,
+                "index {index} is out of range for a stack of {layer_count} layers"
+            ),
+            EditError::UnknownLayer { layer } => write!(f, "there is no layer {}", layer.0),
+            EditError::InvalidOpacity { opacity } => {
+                write!(f, "opacity {opacity} is outside 0.0 to 1.0")
+            }
+        }
+    }
+}
+
+impl std::error::Error for EditError {}
+
 #[derive(Deserialize)]
 struct VersionHeader {
     format_version: u32,
@@ -95,6 +141,71 @@ impl Project {
             visible: true,
         });
         id
+    }
+
+    pub fn layers(&self) -> &[Layer] {
+        &self.layers
+    }
+
+    pub fn set_opacity(&mut self, layer: LayerId, opacity: f32) -> Result<(), EditError> {
+        if !(0.0..=1.0).contains(&opacity) {
+            return Err(EditError::InvalidOpacity { opacity });
+        }
+        self.layer_mut(layer)?.opacity = opacity;
+        Ok(())
+    }
+
+    pub fn set_blend(&mut self, layer: LayerId, blend: BlendMode) -> Result<(), EditError> {
+        self.layer_mut(layer)?.blend = blend;
+        Ok(())
+    }
+
+    pub fn set_visible(&mut self, layer: LayerId, visible: bool) -> Result<(), EditError> {
+        self.layer_mut(layer)?.visible = visible;
+        Ok(())
+    }
+
+    pub fn remove_layer(&mut self, layer: LayerId) -> Result<(), EditError> {
+        let index = self.layer_index(layer)?;
+        self.layers.remove(index);
+        Ok(())
+    }
+
+    pub fn move_layer(&mut self, layer: LayerId, new_index: usize) -> Result<(), EditError> {
+        let index = self.layer_index(layer)?;
+        if new_index >= self.layers.len() {
+            return Err(EditError::IndexOutOfRange {
+                index: new_index,
+                layer_count: self.layers.len(),
+            });
+        }
+        let moved = self.layers.remove(index);
+        self.layers.insert(new_index, moved);
+        Ok(())
+    }
+
+    pub fn duplicate_layer(&mut self, layer: LayerId) -> Result<LayerId, EditError> {
+        let index = self.layer_index(layer)?;
+        let id = LayerId(self.next_layer_id);
+        self.next_layer_id += 1;
+        let mut copy = self.layers[index].clone();
+        copy.id = id;
+        self.layers.insert(index + 1, copy);
+        Ok(id)
+    }
+
+    fn layer_index(&self, id: LayerId) -> Result<usize, EditError> {
+        self.layers
+            .iter()
+            .position(|l| l.id == id)
+            .ok_or(EditError::UnknownLayer { layer: id })
+    }
+
+    fn layer_mut(&mut self, id: LayerId) -> Result<&mut Layer, EditError> {
+        self.layers
+            .iter_mut()
+            .find(|l| l.id == id)
+            .ok_or(EditError::UnknownLayer { layer: id })
     }
 
     pub fn to_json(&self) -> String {
