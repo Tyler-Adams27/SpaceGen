@@ -103,7 +103,7 @@ impl Default for StarFieldSettings {
 enum LayerSettings {
     StarField(StarFieldSettings),
     Nebula(NebulaSettings),
-    GalaxyBand,
+    GalaxyBand(GalaxyBandSettings),
     Sun,
 }
 
@@ -112,7 +112,7 @@ impl LayerSettings {
         match kind {
             LayerKind::StarField => LayerSettings::StarField(StarFieldSettings::default()),
             LayerKind::Nebula => LayerSettings::Nebula(NebulaSettings::default()),
-            LayerKind::GalaxyBand => LayerSettings::GalaxyBand,
+            LayerKind::GalaxyBand => LayerSettings::GalaxyBand(GalaxyBandSettings::default()),
             LayerKind::Sun => LayerSettings::Sun,
         }
     }
@@ -121,9 +121,56 @@ impl LayerSettings {
         match self {
             LayerSettings::StarField(_) => LayerKind::StarField,
             LayerSettings::Nebula(_) => LayerKind::Nebula,
-            LayerSettings::GalaxyBand => LayerKind::GalaxyBand,
+            LayerSettings::GalaxyBand(_) => LayerKind::GalaxyBand,
             LayerSettings::Sun => LayerKind::Sun,
         }
+    }
+}
+
+/// A Milky Way-style band of light across the sky. Every field is 0.0 to 1.0.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GalaxyBandSettings {
+    /// Tilt of the band away from the horizon, 0.0 (flat) to 1.0 (vertical).
+    pub tilt: f32,
+    /// How wide the band is across the sky.
+    pub width: f32,
+    pub brightness: f32,
+    /// How strongly dark dust lanes cut through the band.
+    pub dust: f32,
+    /// Color of the band's bright core.
+    pub color_a: [f32; 3],
+    /// Color of the band's outer glow.
+    pub color_b: [f32; 3],
+}
+
+impl Default for GalaxyBandSettings {
+    fn default() -> Self {
+        GalaxyBandSettings {
+            tilt: 0.3,
+            width: 0.4,
+            brightness: 0.5,
+            dust: 0.5,
+            color_a: [1.0, 0.85, 0.6],
+            color_b: [0.5, 0.6, 1.0],
+        }
+    }
+}
+
+impl GalaxyBandSettings {
+    fn validate(&self) -> Result<(), EditError> {
+        check_unit_range(&[
+            ("tilt", self.tilt),
+            ("width", self.width),
+            ("brightness", self.brightness),
+            ("dust", self.dust),
+            ("color_a", self.color_a[0]),
+            ("color_a", self.color_a[1]),
+            ("color_a", self.color_a[2]),
+            ("color_b", self.color_b[0]),
+            ("color_b", self.color_b[1]),
+            ("color_b", self.color_b[2]),
+        ])
     }
 }
 
@@ -152,6 +199,13 @@ impl Layer {
     pub fn nebula_settings(&self) -> Option<&NebulaSettings> {
         match &self.settings {
             LayerSettings::Nebula(settings) => Some(settings),
+            _ => None,
+        }
+    }
+
+    pub fn galaxy_band_settings(&self) -> Option<&GalaxyBandSettings> {
+        match &self.settings {
+            LayerSettings::GalaxyBand(settings) => Some(settings),
             _ => None,
         }
     }
@@ -353,6 +407,23 @@ impl Project {
         Ok(())
     }
 
+    pub fn set_galaxy_band_settings(
+        &mut self,
+        layer: LayerId,
+        settings: GalaxyBandSettings,
+    ) -> Result<(), EditError> {
+        settings.validate()?;
+        let target = self.layer_mut(layer)?;
+        if !matches!(target.settings, LayerSettings::GalaxyBand(_)) {
+            return Err(EditError::WrongKind {
+                layer,
+                expected: "galaxy band",
+            });
+        }
+        target.settings = LayerSettings::GalaxyBand(settings);
+        Ok(())
+    }
+
     pub fn set_star_field_settings(
         &mut self,
         layer: LayerId,
@@ -441,7 +512,8 @@ impl Project {
             let checked = match &layer.settings {
                 LayerSettings::StarField(settings) => settings.validate(),
                 LayerSettings::Nebula(settings) => settings.validate(),
-                LayerSettings::GalaxyBand | LayerSettings::Sun => Ok(()),
+                LayerSettings::GalaxyBand(settings) => settings.validate(),
+                LayerSettings::Sun => Ok(()),
             };
             if let Err(EditError::InvalidSetting { field, value }) = checked {
                 return Err(ProjectError::InvalidSetting {
@@ -528,6 +600,7 @@ enum DragField {
     Opacity,
     StarField,
     Nebula,
+    GalaxyBand,
 }
 
 pub struct History {
@@ -587,6 +660,16 @@ impl History {
     ) -> Result<(), EditError> {
         self.edit(Some((layer, DragField::Nebula)), |project| {
             project.set_nebula_settings(layer, settings)
+        })
+    }
+
+    pub fn set_galaxy_band_settings(
+        &mut self,
+        layer: LayerId,
+        settings: GalaxyBandSettings,
+    ) -> Result<(), EditError> {
+        self.edit(Some((layer, DragField::GalaxyBand)), |project| {
+            project.set_galaxy_band_settings(layer, settings)
         })
     }
 
