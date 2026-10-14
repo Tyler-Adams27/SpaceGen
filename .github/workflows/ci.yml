@@ -3,6 +3,8 @@ name: CI
 on:
   push:
   pull_request:
+  release:
+    types: [published]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -12,7 +14,9 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Every push and pull request: Linux only, to keep Actions minutes low.
   check:
+    if: github.event_name != 'release'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -41,6 +45,34 @@ jobs:
       # Render tests skip themselves with "SKIPPED" when the software adapter is missing.
       # On CI that would turn the run green while testing nothing, so fail on it.
       - name: Test
+        run: |
+          set -o pipefail
+          cargo test --workspace -- --nocapture 2>&1 | tee test-output.txt
+          if grep -q SKIPPED test-output.txt; then
+            echo "::error::Render tests were skipped: no software adapter on this runner."
+            exit 1
+          fi
+
+  # Only when a release is published: the other platforms the app supports.
+  platforms:
+    if: github.event_name == 'release'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --workspace --all-targets
+
+      - name: Test
+        shell: bash
         run: |
           set -o pipefail
           cargo test --workspace -- --nocapture 2>&1 | tee test-output.txt
