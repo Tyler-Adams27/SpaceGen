@@ -71,8 +71,18 @@ Layer order is +X, -X, +Y, -Y, +Z, -Z. This is the spec-level convention; which 
 - Equirectangular mapping from Cycles source: `u = 0.5 - atan2(dir.y, dir.x)/(2pi)`, `v = 1 - acos(dir.z)/pi` (`direction_to_equirectangular`, range (-2pi, pi, -pi, pi)); the SVM environment node calls it (https://github.com/blender/blender/blob/main/intern/cycles/kernel/svm/tex_coord.h line ~194). So u=0.5 (image centre) at +X, u=0.25 at +Y, u=0.75 at -Y, u=0/1 at -X; v=1 (Blender image v is bottom-up, so top of image) at +Z. Source: https://github.com/blender/blender/blob/main/intern/cycles/kernel/camera/projection.h (main branch, 2026-10-13). The manual does not state the centre direction (UNCONFIRMED in docs). The tex_coord.h hit is the generic coordinate function; that the Environment Texture node uses exactly this path was inferred from the call site, not read end to end.
 - Image formats: the node page uses an HDR image as example and defers to shared image settings; no explicit .exr/.hdr list found there. Format acceptance UNCONFIRMED (Blender image-format docs not fetched).
 
-## Open items (UNCONFIRMED)
-- Unity: per-face flips, cross layout order, panoramic centre/u direction, HDR file formats, shader property IDs, handedness.
-- Unreal: UE5 six-face import and flips, .exr cubemap behaviour, equirect centre/u direction.
-- Godot: handedness; whether face image orientation equals the Khronos table.
-- Blender: six-face import (none documented), image-format list, handedness, doc-level statement of equirect centre.
+## Resolved 2026-10-14 (issue #5)
+- Unity HDR formats: **confirmed.** The import list is "BMP, EXR, GIF, HDR, IFF, JPG, PICT, PNG, PSD, TGA, TIFF, SVG". https://docs.unity3d.com/Manual/ImportingTextures.html
+- Blender image formats: **confirmed.** OpenEXR (float 16/32, `.exr`) and Radiance HDR (float, `.hdr`) are in "the list of image file formats supported internally by Blender". https://docs.blender.org/manual/en/latest/files/media/image_formats.html
+- Godot handedness: **confirmed right-handed**, Y up ("Godot uses a right-handed coordinate system"). The page does not state the sign of the forward axis; Z- forward rests on the importing_images page cited above. https://docs.godotengine.org/en/stable/tutorials/assets_pipeline/importing_images.html and https://docs.godotengine.org/en/stable/tutorials/3d/introduction_to_3d.html
+- Blender: the manual says only "right-angled Cartesian ... Z axis pointing upwards" and never uses the word right-handed in the pages checked. Handedness stays undocumented there.
+- Unreal `.hdr`: confirmed as "Cubemap Texture (LongLat unwrap)" (4.27 import guide, cited above). A UE5 search found the same wording; `.exr` as a long-lat cubemap is still not stated in the docs.
+- Unity cross layout: the cubemap page lists "cross, or sequence (+x -x +y -y +z -z)" and "horizontal or vertical" and says nothing about face placement or orientation. Not needed: SpaceGen exports six separate Faces.
+- Settled by observation (user, 2026-10-14): Faces need no per-engine flip or rotation in Unity, Unreal or Godot, which covers the per-face flip cells, "UE5 six-face import and flips", and "whether Godot face orientation equals the Khronos table" (it works, so it does, in effect).
+- Godot panorama mapping re-read from `sky.glsl` on master: `atan2(x, -z)` and `acos(y)`, then divided by (2pi, pi), matching the mapping above.
+
+## Open items (UNCONFIRMED, no effect on any export seen so far)
+- Unity: panoramic centre/u direction, `_XxxTex` shader property IDs, handedness.
+- Unreal: `.exr` as a long-lat cubemap, equirect centre/u direction.
+- Blender: handedness, doc-level statement of the equirect centre. Six-face import: none documented.
+- Panorama use in Unity and Unreal has not been tried.
