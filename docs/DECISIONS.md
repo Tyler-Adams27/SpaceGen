@@ -102,3 +102,12 @@ The user said: "from here on, you will have agency… just get me a MVP. Documen
 - **Which colors:** star field tint, both nebula colors and both galaxy band colors. Nothing else changes (opacity, blend, visibility and the other settings stay).
 - **How:** random hue with fixed ranges rather than random RGB, which gives muddy greys. Nebula and galaxy band colors are vivid (saturation 0.55 to 1.0, value 0.8 to 1.0) and the second color's hue sits 0.15 to 0.5 around the wheel from the first. Star tints stay near white (saturation up to 0.3), because tinting every star strongly looks wrong. Alternative: fully random star tints, rejected for that reason; easy to change in `ColorPicker::pastel`.
 - Colors the user picked by hand are overwritten on Randomize; undo restores them.
+
+## Sun Layer (issue #7)
+
+- **Settings:** `azimuth`, `elevation`, `size`, `brightness`, `glare` and `color`, all 0.0 to 1.0, defaults azimuth 0.0, elevation 0.6, size 0.5, brightness 0.5, glare 0.5, color a warm white. Validation, save/load, duplicate and undo drag merging copy the other Layer kinds.
+- **Direction is two angles**, edited as "Direction" (azimuth) and "Height" (elevation) sliders. Azimuth 0.0 looks toward +Z (the panorama's centre), 0.25 toward +X, 0.5 behind; elevation 0.5 is the horizon, 1.0 straight up. Alternative: "aim at the current view", rejected because it ties the model to the Preview camera, cannot be reproduced from a saved Project and cannot be tested through the core API.
+- **A Sun is placed by hand, so the Seed does not affect it** (a test pins this). Randomize recolors it (a near-white tint, like star tints) but never moves it.
+- **Look:** a disc (radius 0.7 to 9 degrees, never under a pixel) at 8 times white at full brightness, so the HDRI keeps values above 1.0, plus a halo that fades over about six disc radii and a faint wide glare. The glare strength scales both. Tuning constants are at the top of `sky.wgsl`; the wide glare was lowered after a first render lifted the whole sky to grey.
+- **Old files:** `SunSettings` has `#[serde(default)]`, like the galaxy band, so a bare Sun Layer from an older file loads with the defaults.
+- **Faces-versus-panorama test:** uses six suns (one toward each Face) at low brightness. At full brightness the nearest-pixel comparison of an 8x-white disc edge reported a 0.034 mean difference on one Face; the same scene at lower brightness agrees, and a deliberate pixel-size-dependent mutation still fails by a wide margin (0.14 against the 0.02 limit).

@@ -13,21 +13,23 @@ pub const MAX_LAYERS: usize = 16;
 struct GpuLayer {
     seed: [u32; 2],
     blend: u32,
-    /// 0 = star field, 1 = nebula, 2 = galaxy band.
+    /// 0 = star field, 1 = nebula, 2 = galaxy band, 3 = sun.
     kind: u32,
     /// Star field: density, brightness, size, color variation.
     /// Nebula: coverage, scale, brightness, unused.
     /// Galaxy band: tilt, width, brightness, dust.
+    /// Sun: azimuth, elevation, size, brightness.
     params: [f32; 4],
-    /// Star field tint, or nebula or galaxy band color A, in rgb; the Layer's opacity in w.
+    /// Star field tint, or nebula, galaxy band or sun color A, in rgb; the Layer's opacity in w.
     color_a_opacity: [f32; 4],
-    /// Nebula or galaxy band color B in rgb; unused for stars.
+    /// Nebula or galaxy band color B in rgb; the sun's glare in x; unused for stars.
     color_b: [f32; 4],
 }
 
 const KIND_STAR_FIELD: u32 = 0;
 const KIND_NEBULA: u32 = 1;
 const KIND_GALAXY_BAND: u32 = 2;
+const KIND_SUN: u32 = 3;
 
 /// Mirrors `Globals` in `sky.wgsl`.
 #[repr(C)]
@@ -97,6 +99,14 @@ impl SkyUniforms {
                     params: [band.tilt, band.width, band.brightness, band.dust],
                     color_a_opacity: rgb_opacity(band.color_a),
                     color_b: [band.color_b[0], band.color_b[1], band.color_b[2], 0.0],
+                    ..common
+                };
+            } else if let Some(sun) = layer.sun_settings() {
+                layers[count] = GpuLayer {
+                    kind: KIND_SUN,
+                    params: [sun.azimuth, sun.elevation, sun.size, sun.brightness],
+                    color_a_opacity: rgb_opacity(sun.color),
+                    color_b: [sun.glare, 0.0, 0.0, 0.0],
                     ..common
                 };
             } else {
