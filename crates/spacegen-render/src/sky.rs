@@ -62,7 +62,7 @@ impl SkyUniforms {
             if !layer.visible() || count == MAX_LAYERS {
                 continue;
             }
-            let seed = project.seed().layer_seed(layer.id()).0;
+            let seed = layer.seed_under(project.seed()).0;
             let blend = match layer.blend() {
                 BlendMode::Additive => 0,
                 BlendMode::Screen => 1,
