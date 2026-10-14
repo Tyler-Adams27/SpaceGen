@@ -29,7 +29,7 @@ Use `--release`: the sky is drawn on the GPU, but unoptimized builds make the wi
   *Star field* has density, brightness, star size, color variety and a tint; *Nebula* has coverage, cloud size, brightness and two colors.
 - **Undo / Redo** (Ctrl+Z, Ctrl+Y or Ctrl+Shift+Z) cover every edit. **Save** (Ctrl+S) writes a `.spacegen` file.
 - **Export** writes into a folder you choose:
-  - six cube faces named for Unity, Unreal or Godot, as 16-bit PNG or JPEG, 512 to 8192 pixels;
+  - six cube faces named for Unity, Unreal or Godot, as PNG (16-bit or 8-bit) or JPEG, 512 to 8192 pixels;
   - one equirectangular panorama (up to 8192 wide);
   - an HDRI for Blender and engines that take HDR skies: OpenEXR (`.exr`, floating point) or Radiance (`.hdr`).
 

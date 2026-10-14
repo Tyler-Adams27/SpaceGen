@@ -4,7 +4,7 @@ use std::sync::mpsc::{self, Receiver};
 use eframe::egui;
 use spacegen_core::{
     BlendMode, EditError, EngineConvention, HdriFormat, History, ImageFormat, LayerId, LayerKind,
-    Project,
+    PngBitDepth, Project,
 };
 use spacegen_render::{
     ExportOptions, Projection, Renderer, SkyUniforms, camera_basis, export_skybox,
@@ -38,6 +38,7 @@ struct ExportSettings {
     panorama: bool,
     hdri: bool,
     hdri_format: HdriFormat,
+    png_bit_depth: PngBitDepth,
     jpeg_quality: u8,
 }
 
@@ -53,6 +54,7 @@ impl Default for ExportSettings {
             panorama: true,
             hdri: true,
             hdri_format: HdriFormat::OpenExr,
+            png_bit_depth: PngBitDepth::Sixteen,
             jpeg_quality: 95,
         }
     }
@@ -217,6 +219,7 @@ impl SpacegenApp {
             panorama: self.export.panorama,
             hdri: self.export.hdri,
             hdri_format: self.export.hdri_format,
+            png_bit_depth: self.export.png_bit_depth,
             jpeg_quality: self.export.jpeg_quality,
         };
         let (sender, receiver) = mpsc::channel();
@@ -522,6 +525,17 @@ impl SpacegenApp {
             ui.selectable_value(&mut self.export.format, ImageFormat::Png, "PNG");
             ui.selectable_value(&mut self.export.format, ImageFormat::Jpeg, "JPEG");
         });
+        if self.export.format == ImageFormat::Png {
+            ui.horizontal(|ui| {
+                ui.label("PNG depth");
+                ui.selectable_value(
+                    &mut self.export.png_bit_depth,
+                    PngBitDepth::Sixteen,
+                    "16-bit",
+                );
+                ui.selectable_value(&mut self.export.png_bit_depth, PngBitDepth::Eight, "8-bit");
+            });
+        }
         if self.export.format == ImageFormat::Jpeg {
             ui.add(egui::Slider::new(&mut self.export.jpeg_quality, 50..=100).text("JPEG quality"));
         }

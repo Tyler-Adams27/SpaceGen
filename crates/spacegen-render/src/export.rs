@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use spacegen_core::{EngineConvention, Face, HdriFormat, ImageFormat, Project};
+use spacegen_core::{EngineConvention, Face, HdriFormat, ImageFormat, PngBitDepth, Project};
 
 use crate::{RenderError, Renderer, SkyImage};
 
@@ -51,6 +51,8 @@ pub struct ExportOptions {
     /// Write the equirectangular panorama as a floating-point HDRI, in `hdri_format`.
     pub hdri: bool,
     pub hdri_format: HdriFormat,
+    /// Bits per channel of PNG output; ignored for JPEG.
+    pub png_bit_depth: PngBitDepth,
     /// JPEG quality, 1 to 100.
     pub jpeg_quality: u8,
 }
@@ -190,16 +192,29 @@ fn extension(format: ImageFormat) -> &'static str {
 
 fn save_image(image: &SkyImage, path: &Path, options: &ExportOptions) -> Result<(), ExportError> {
     match options.format {
-        ImageFormat::Png => {
-            let mut buffer =
-                image::ImageBuffer::<image::Rgb<u16>, Vec<u16>>::new(image.width(), image.height());
-            for (target, source) in buffer.pixels_mut().zip(image.pixels()) {
-                *target = image::Rgb(std::array::from_fn(|c| {
-                    (linear_to_srgb(source[c]) * 65535.0).round() as u16
-                }));
+        ImageFormat::Png => match options.png_bit_depth {
+            PngBitDepth::Sixteen => {
+                let mut buffer = image::ImageBuffer::<image::Rgb<u16>, Vec<u16>>::new(
+                    image.width(),
+                    image.height(),
+                );
+                for (target, source) in buffer.pixels_mut().zip(image.pixels()) {
+                    *target = image::Rgb(std::array::from_fn(|c| {
+                        (linear_to_srgb(source[c]) * 65535.0).round() as u16
+                    }));
+                }
+                buffer.save(path)?;
             }
-            buffer.save(path)?;
-        }
+            PngBitDepth::Eight => {
+                let mut buffer = image::RgbImage::new(image.width(), image.height());
+                for (target, source) in buffer.pixels_mut().zip(image.pixels()) {
+                    *target = image::Rgb(std::array::from_fn(|c| {
+                        (linear_to_srgb(source[c]) * 255.0).round() as u8
+                    }));
+                }
+                buffer.save(path)?;
+            }
+        },
         ImageFormat::Jpeg => {
             let mut buffer = image::RgbImage::new(image.width(), image.height());
             for (target, source) in buffer.pixels_mut().zip(image.pixels()) {
