@@ -3,7 +3,7 @@
 //!
 //! `cargo run -p spacegen-render --example dump_sky -- <output dir> [face size]`
 
-use spacegen_core::{EngineConvention, ImageFormat, LayerKind, Project, Seed};
+use spacegen_core::{EngineConvention, HdriFormat, ImageFormat, LayerKind, Project, Seed};
 use spacegen_render::{ExportOptions, Renderer, export_skybox};
 
 fn main() {
@@ -25,6 +25,7 @@ fn main() {
         faces: true,
         panorama: true,
         hdri: false,
+        hdri_format: HdriFormat::OpenExr,
         jpeg_quality: 95,
     };
     let written = export_skybox(&renderer, &project, dir.as_ref(), &options, |_, _| {})
