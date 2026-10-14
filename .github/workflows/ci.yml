@@ -13,9 +13,15 @@ env:
 
 jobs:
   check:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # lavapipe is Mesa's software Vulkan driver; the render tests run on it.
+      - name: Install a software Vulkan driver
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libvulkan1 mesa-vulkan-drivers
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -35,11 +41,10 @@ jobs:
       # Render tests skip themselves with "SKIPPED" when the software adapter is missing.
       # On CI that would turn the run green while testing nothing, so fail on it.
       - name: Test
-        shell: pwsh
         run: |
-          cargo test --workspace -- --nocapture 2>&1 | Tee-Object -FilePath test-output.txt
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if (Select-String -Path test-output.txt -Pattern 'SKIPPED' -Quiet) {
-            Write-Error 'Render tests were skipped: no software adapter on this runner.'
+          set -o pipefail
+          cargo test --workspace -- --nocapture 2>&1 | tee test-output.txt
+          if grep -q SKIPPED test-output.txt; then
+            echo "::error::Render tests were skipped: no software adapter on this runner."
             exit 1
-          }
+          fi
