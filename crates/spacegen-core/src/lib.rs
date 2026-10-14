@@ -34,6 +34,9 @@ pub struct Layer {
     blend: BlendMode,
     opacity: f32,
     visible: bool,
+    /// Mixed into the Layer's seed so it can get a new look on its own; 0 means unchanged.
+    #[serde(default)]
+    variation: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -269,6 +272,37 @@ impl Layer {
         }
     }
 
+    fn recolor(&mut self, seed: Seed) {
+        let mut picker = ColorPicker(seed.layer_seed(self.id).0);
+        match &mut self.settings {
+            LayerSettings::StarField(settings) => settings.tint = picker.pastel(),
+            LayerSettings::Nebula(settings) => {
+                (settings.color_a, settings.color_b) = picker.vivid_pair();
+            }
+            LayerSettings::GalaxyBand(settings) => {
+                (settings.color_a, settings.color_b) = picker.vivid_pair();
+            }
+            LayerSettings::Sun(settings) => settings.color = picker.pastel(),
+        }
+    }
+
+    pub fn variation(&self) -> u64 {
+        self.variation
+    }
+
+    /// The Seed this Layer draws its randomness from: the Project Seed and the Layer id, with the
+    /// Layer's variation mixed in once it has been re-rolled.
+    pub fn seed_under(&self, seed: Seed) -> Seed {
+        let base = seed.layer_seed(self.id);
+        if self.variation == 0 {
+            return base;
+        }
+        let mut z = base.0 ^ self.variation.wrapping_mul(0x9E3779B97F4A7C15);
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
+        Seed(z ^ (z >> 31))
+    }
+
     pub fn id(&self) -> LayerId {
         self.id
     }
@@ -413,6 +447,7 @@ impl Project {
             blend: BlendMode::Additive,
             opacity: 1.0,
             visible: true,
+            variation: 0,
         });
         id
     }
@@ -434,18 +469,18 @@ impl Project {
     /// little way around the color wheel from the first.
     pub fn randomize_colors(&mut self, seed: Seed) {
         for layer in &mut self.layers {
-            let mut picker = ColorPicker(seed.layer_seed(layer.id).0);
-            match &mut layer.settings {
-                LayerSettings::StarField(settings) => settings.tint = picker.pastel(),
-                LayerSettings::Nebula(settings) => {
-                    (settings.color_a, settings.color_b) = picker.vivid_pair();
-                }
-                LayerSettings::GalaxyBand(settings) => {
-                    (settings.color_a, settings.color_b) = picker.vivid_pair();
-                }
-                LayerSettings::Sun(settings) => settings.color = picker.pastel(),
-            }
+            layer.recolor(seed);
         }
+    }
+
+    /// Gives one Layer a new look: a fresh variation, so its stars, clouds or band structure
+    /// change, and new colors, both derived from `seed`. Every other Layer, and the Project
+    /// Seed, stay exactly as they are.
+    pub fn reroll_layer(&mut self, layer: LayerId, seed: Seed) -> Result<(), EditError> {
+        let target = self.layer_mut(layer)?;
+        target.variation = seed.0.max(1);
+        target.recolor(seed);
+        Ok(())
     }
 
     pub fn set_opacity(&mut self, layer: LayerId, opacity: f32) -> Result<(), EditError> {
@@ -827,6 +862,11 @@ impl History {
             Ok(())
         })
         .expect("randomizing cannot fail");
+    }
+
+    /// Gives one Layer a new look (see `Project::reroll_layer`), as one undo step.
+    pub fn reroll_layer(&mut self, layer: LayerId, seed: Seed) -> Result<(), EditError> {
+        self.edit(None, |project| project.reroll_layer(layer, seed))
     }
 
     pub fn set_seed(&mut self, seed: Seed) {
