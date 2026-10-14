@@ -9,4 +9,4 @@ Desktop app that generates procedural space skyboxes. Read `CONTEXT.md` for the 
 - **Test at public seams.** List the public interface and the seam under test before writing tests, and test behavior through that interface. GUI glue that cannot be unit-tested is kept thin and checked by running the app.
 - **Use domain terms from `CONTEXT.md`** in names, tests and messages (Skybox, Layer, Seed, Project, Preview, Export, Face).
 - **Record resolved terms in `CONTEXT.md` and hard-to-reverse trade-offs in `docs/adr/`** as they are decided.
-- **Commit locally in small steps; never push.** End commit messages with the `Co-Authored-By` line given in the session's system reminder.
+- **Work on a branch and open a pull request; never commit or push to `main`.** Make a branch per piece of work, commit in small steps, push the branch and open a PR into `main`. Do not merge a PR unless asked. End commit messages with the `Co-Authored-By` line given in the session's system reminder.

@@ -83,3 +83,7 @@ The user said: "from here on, you will have agency… just get me a MVP. Documen
 - **Skipped render tests fail the run.** Render tests print `SKIPPED` and return when no software adapter exists, which would pass CI while testing nothing. The Test step runs with `--nocapture` and fails if `SKIPPED` appears.
 - **Cache:** `Swatinem/rust-cache`. Actions are pinned to major tags, not commit hashes, to keep upkeep low.
 - **Windows and macOS run only on a published release** (user decision, 2026-10-14, to save Actions minutes). The `platforms` job builds and tests on `windows-latest` and `macos-latest` when a release is published; the Linux `check` job (with fmt and clippy) covers every push and pull request and is skipped on releases. fmt and clippy are not repeated on the other platforms. This job is untested until a release: Windows should have a software adapter (WARP), but macOS may not, and the SKIPPED guard will then fail that leg. If so, decide between skipping render tests on macOS and another adapter. `fail-fast` is off so one platform's failure does not hide the other's.
+
+## Workflow
+
+- **Pull requests, not `main`** (user decision, 2026-10-14). Work goes on a branch and reaches `main` through a PR, so CI runs before merge. This replaces the earlier "commit locally, never push" rule in `CLAUDE.md`. PRs are not merged without the user's say-so.
