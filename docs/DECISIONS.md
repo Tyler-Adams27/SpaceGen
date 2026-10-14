@@ -33,7 +33,7 @@ The user said: "from here on, you will have agency… just get me a MVP. Documen
 - **Where it lives:** `spacegen-render::export`, because it needs rendered pixels; it takes a `Renderer`, a `Project`, a folder and `ExportOptions`, and reports progress through a callback so the app can run it on a thread.
 - **Outputs:** six Faces named by Engine convention, one equirectangular panorama (`<name>_panorama.png|jpg`, width = 4 x face size, so equator pixel density matches the Faces) and an OpenEXR HDRI (`<name>.exr`, 32-bit float, linear, same panorama).
 - **Color:** PNG and JPEG are sRGB-encoded from linear light (the sRGB curve runs in `f64`, because the `f32` version turned pure white into 65534). EXR stays linear and keeps values above 1.0.
-- **PNG depth:** 16-bit always; no 8-bit PNG option in the MVP. JPEG is 8-bit with a quality setting (default 95).
+- **PNG depth:** 16-bit by default, with an 8-bit option (issue #4, `PngBitDepth`) for engines and importers that mishandle 16-bit PNGs. It applies to Faces and the panorama; JPEG is always 8-bit with a quality setting (default 95). The choice is shown only when PNG is selected.
 - **Radiance `.hdr`** was first left out because OpenEXR covers the HDRI requirement. It is now an alternative HDRI format (issue #3, `HdriFormat`): same linear float panorama, written as RGBE by the `image` crate's `hdr` encoder. RGBE has 8-bit mantissas, so it is coarser than 32-bit EXR; EXR stays the default. The export panel shows `.exr` / `.hdr` beside the HDRI checkbox.
 - **`image` crate** with only the `png`, `jpeg` and `exr` features, to keep compile time down.
 - **Look tuning:** star presence 0.45, brightness skew 9 after viewing renders; `examples/dump_sky.rs` renders a sample sky to PNG for this.

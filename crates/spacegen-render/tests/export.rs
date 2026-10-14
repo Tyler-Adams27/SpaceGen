@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
-use spacegen_core::{EngineConvention, HdriFormat, ImageFormat, LayerKind, Project, Seed};
+use spacegen_core::{
+    EngineConvention, HdriFormat, ImageFormat, LayerKind, PngBitDepth, Project, Seed,
+};
 use spacegen_render::{ExportOptions, Renderer, export_skybox, linear_to_srgb, panorama_width};
 
 fn temp_dir(label: &str) -> PathBuf {
@@ -26,6 +28,7 @@ fn faces_only(face_size: u32) -> ExportOptions {
         panorama: false,
         hdri: false,
         hdri_format: HdriFormat::OpenExr,
+        png_bit_depth: PngBitDepth::Sixteen,
         jpeg_quality: 95,
     }
 }
@@ -244,4 +247,31 @@ fn the_hdri_can_be_written_as_radiance_hdr_and_keeps_light_brighter_than_white()
         brightest > 1.0,
         "expected values above 1.0, brightest was {brightest}"
     );
+}
+
+#[test]
+fn png_faces_and_panorama_are_written_at_the_chosen_bit_depth() {
+    let Ok(renderer) = Renderer::software() else {
+        eprintln!("SKIPPED: no software adapter");
+        return;
+    };
+    for (depth, expected) in [
+        (PngBitDepth::Sixteen, image::ColorType::Rgb16),
+        (PngBitDepth::Eight, image::ColorType::Rgb8),
+    ] {
+        let dir = temp_dir(&format!("png-depth-{depth:?}"));
+        let options = ExportOptions {
+            panorama: true,
+            png_bit_depth: depth,
+            ..faces_only(8)
+        };
+
+        let written = export_skybox(&renderer, &star_project(), &dir, &options, |_, _| {}).unwrap();
+
+        assert_eq!(written.len(), 7);
+        for path in &written {
+            let color = image::open(path).unwrap().color();
+            assert_eq!(color, expected, "{} at {depth:?}", path.display());
+        }
+    }
 }
