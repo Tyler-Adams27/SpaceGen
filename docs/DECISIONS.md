@@ -71,3 +71,4 @@ The user said: "from here on, you will have agency… just get me a MVP. Documen
 ### Verified by the user
 
 - **Blender import works** (reported by the user): the exported HDRI/panorama loads in Blender. Not yet reported: whether the sky is upright in Blender (our panorama is Y-up with the centre toward +Z; Blender is Z-up), and whether the six Faces tile correctly in Unity, Unreal or Godot. Open items in `docs/research/engine-cubemap-conventions.md` stay open until those are checked.
+- **Godot panorama works** (reported by the user, 2026-10-14): the exported panorama in a `PanoramaSkyMaterial` shows no seam and looks right. This confirms the equirectangular orientation decision above against Godot. The six Faces in Godot are still unchecked.
