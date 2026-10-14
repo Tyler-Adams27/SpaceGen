@@ -121,3 +121,10 @@ The user said: "from here on, you will have agency… just get me a MVP. Documen
 - **The whole-Project Randomize leaves variations alone.** It changes the Project Seed and every color; a re-rolled Layer still looks different from before because its base seed changed.
 - **UI:** a "Re-roll this layer" button under the selected Layer's heading.
 - **Tests:** isolation is proved in `render_reroll.rs` by hiding the re-rolled Layer and checking the others' pixels are identical, and a structure test compares a re-roll against the old structure in the new colors, so a color-only change would fail it.
+
+## App icon
+
+- **The window icon is `assets/icon.png`** (256x256 RGBA), embedded with `include_bytes!` and decoded by `eframe::icon_data::from_png_bytes` (`icon::app_icon`), then set with `ViewportBuilder::with_icon`. `assets/logo.svg` is the source: a rounded tile with a neon nebula, galaxy band, a sun with rays and a grey cube standing for the Skybox and its Faces.
+- **The PNG is committed, not rendered at build time.** The logo uses SVG filters (noise, displacement, masks) that need a full renderer such as resvg; pulling one into the app's dependencies or a build script would add compile time and a failure point for a picture that rarely changes. Alternative: rasterise in `build.rs`, rejected for that reason. To regenerate: `npm i @resvg/resvg-js`, render `logo.svg` at 256 px width to `icon.png`. The `ray` filter uses an explicit `userSpaceOnUse` region because resvg panicked on a percentage region combined with `feDisplacementMap`.
+- **Not done: the Windows `.exe` file icon** (Explorer, installers). That needs an `.ico` embedded by a build script (for example `winres`). The window and taskbar show the icon at runtime; the file icon is a separate change.
+- **Tests:** the picture is 256x256 RGBA, with transparent rounded corners and an opaque middle (a solid-square mutation fails it).

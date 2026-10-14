@@ -1,0 +1,212 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="SpaceGen">
+  <title>SpaceGen</title>
+  <defs>
+    <radialGradient id="nebulaA" cx="30%" cy="35%" r="55%">
+      <stop offset="0" stop-color="#00c8ff" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#00c8ff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="nebulaB" cx="75%" cy="70%" r="50%">
+      <stop offset="0" stop-color="#ff2bd6" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#ff2bd6" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="sun" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.3" stop-color="#ffffff" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="vignette" cx="50%" cy="50%" r="70%">
+      <stop offset="0.6" stop-color="#000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0.45"/>
+    </radialGradient>
+
+    <!-- Cube Faces: lit from the sun (top right), nebula bounce light on the sides -->
+    <linearGradient id="faceTop" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#8f939d"/>
+      <stop offset="1" stop-color="#d3d6dd"/>
+    </linearGradient>
+    <linearGradient id="faceLeft" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7b8190"/>
+      <stop offset="1" stop-color="#555a66"/>
+    </linearGradient>
+    <linearGradient id="faceRight" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6b6f7b"/>
+      <stop offset="1" stop-color="#3b3e48"/>
+    </linearGradient>
+    <linearGradient id="rimCyan" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#00c8ff" stop-opacity="0.35"/>
+      <stop offset="0.5" stop-color="#00c8ff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="rimPink" x1="1" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#ff2bd6" stop-opacity="0.4"/>
+      <stop offset="0.6" stop-color="#ff2bd6" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- fine surface wear, kept faint; only lands on the cube -->
+    <filter id="wear" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.7 0.12" numOctaves="3" seed="5" result="n"/>
+      <feColorMatrix in="n" type="matrix" values="0 0 0 0 0.08  0 0 0 0 0.08  0 0 0 0 0.1  0 0 0 1.6 -0.7" result="w"/>
+      <feComposite in="w" in2="SourceAlpha" operator="in"/>
+    </filter>
+    <filter id="smudge" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.05" numOctaves="3" seed="12" result="n"/>
+      <feColorMatrix in="n" type="matrix" values="0 0 0 0 0.05  0 0 0 0 0.05  0 0 0 0 0.06  0 0 0 1.8 -0.7" result="s"/>
+      <feComposite in="s" in2="SourceAlpha" operator="in"/>
+    </filter>
+    <filter id="grain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="7" result="n"/>
+      <feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1.4 -0.45"/>
+    </filter>
+    <filter id="softShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="7"/>
+    </filter>
+    <!-- galaxy band -->
+    <radialGradient id="bandGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff4ff" stop-opacity="1"/>
+      <stop offset="0.4" stop-color="#c9c2ff" stop-opacity="0.6"/>
+      <stop offset="1" stop-color="#b9b4ff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="bandFade" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff"/>
+      <stop offset="1" stop-color="#000"/>
+    </radialGradient>
+    <mask id="bandMask" maskUnits="userSpaceOnUse" x="-80" y="30" width="416" height="196">
+      <ellipse cx="128" cy="128" rx="205" ry="66" fill="url(#bandFade)"/>
+    </mask>
+    <mask id="dustMask" maskUnits="userSpaceOnUse" x="-80" y="30" width="416" height="196">
+      <ellipse cx="128" cy="128" rx="190" ry="26" fill="url(#bandFade)"/>
+    </mask>
+    <!-- cloudy structure of the band -->
+    <filter id="bandClouds" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.012 0.045" numOctaves="5" seed="9" result="n"/>
+      <feColorMatrix in="n" type="matrix" values="0 0 0 0 0.88  0 0 0 0 0.84  0 0 0 0 1  2.8 0 0 0 -0.75"/>
+    </filter>
+    <!-- dark dust lanes running along the band -->
+    <filter id="bandDust" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.018 0.085" numOctaves="4" seed="17" result="n"/>
+      <feColorMatrix in="n" type="matrix" values="0 0 0 0 0.03  0 0 0 0 0.02  0 0 0 0 0.07  3.4 0 0 0 -1.55"/>
+    </filter>
+    <filter id="bandStars" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="21" result="n"/>
+      <feColorMatrix in="n" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  12 0 0 0 -6.4"/>
+    </filter>
+    <filter id="bandBlur" x="-10%" y="-50%" width="120%" height="200%">
+      <feGaussianBlur stdDeviation="5"/>
+    </filter>
+    <!-- sun rays -->
+    <linearGradient id="rayFade" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.95"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <path id="rayLong" d="M-3 0 L0 -86 L3 0 Z" fill="url(#rayFade)"/>
+    <path id="rayMid" d="M-2.5 0 L0 -58 L2.5 0 Z" fill="url(#rayFade)"/>
+    <path id="rayShort" d="M-2 0 L0 -36 L2 0 Z" fill="url(#rayFade)"/>
+    <filter id="rayBlur" filterUnits="userSpaceOnUse" x="-100" y="-100" width="200" height="200">
+      <feTurbulence type="fractalNoise" baseFrequency="0.06" numOctaves="3" seed="31" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="9" xChannelSelector="R" yChannelSelector="G" result="d"/>
+      <feGaussianBlur in="d" stdDeviation="1.1" result="b"/>
+      <!-- fine grain on the rays so their edges feather instead of cutting -->
+      <feTurbulence type="fractalNoise" baseFrequency="0.5" numOctaves="2" seed="8" result="g"/>
+      <feComposite in="b" in2="g" operator="arithmetic" k1="0.8" k2="0.55" k3="0" k4="0"/>
+    </filter>
+    <clipPath id="tile"><rect x="8" y="8" width="240" height="240" rx="44"/></clipPath>
+    <clipPath id="cubeClip"><path d="M128 78 L190 112 L190 178 L128 212 L66 178 L66 112 Z"/></clipPath>
+  </defs>
+
+  <g clip-path="url(#tile)">
+    <rect width="256" height="256" fill="#0a0b1e"/>
+    <rect width="256" height="256" fill="url(#nebulaA)"/>
+    <rect width="256" height="256" fill="url(#nebulaB)"/>
+
+    <!-- Galaxy band: diffuse glow, dust lane, dense star specks -->
+    <g transform="rotate(35 128 128)">
+      <ellipse cx="128" cy="128" rx="205" ry="56" fill="url(#bandGlow)" filter="url(#bandBlur)" opacity="0.85"/>
+      <rect x="-80" y="30" width="416" height="196" filter="url(#bandClouds)" mask="url(#bandMask)" opacity="0.85"/>
+      <rect x="-80" y="30" width="416" height="196" filter="url(#bandDust)" mask="url(#dustMask)" opacity="0.8"/>
+      <rect x="-80" y="30" width="416" height="196" filter="url(#bandStars)" mask="url(#bandMask)"/>
+    </g>
+
+    <!-- Sun Layer -->
+    <circle cx="208" cy="48" r="46" fill="url(#sun)"/>
+    <g transform="translate(208 48)" filter="url(#rayBlur)">
+      <g opacity="0.9">
+        <use href="#rayLong"/>
+        <use href="#rayLong" transform="rotate(90)"/>
+        <use href="#rayLong" transform="rotate(180)"/>
+        <use href="#rayLong" transform="rotate(270)"/>
+      </g>
+      <g opacity="0.7">
+        <use href="#rayMid" transform="rotate(45)"/>
+        <use href="#rayMid" transform="rotate(135)"/>
+        <use href="#rayMid" transform="rotate(225)"/>
+        <use href="#rayMid" transform="rotate(315)"/>
+      </g>
+      <g opacity="0.5">
+        <use href="#rayShort" transform="rotate(22.5)"/>
+        <use href="#rayShort" transform="rotate(67.5)"/>
+        <use href="#rayShort" transform="rotate(112.5)"/>
+        <use href="#rayShort" transform="rotate(157.5)"/>
+        <use href="#rayShort" transform="rotate(202.5)"/>
+        <use href="#rayShort" transform="rotate(247.5)"/>
+        <use href="#rayShort" transform="rotate(292.5)"/>
+        <use href="#rayShort" transform="rotate(337.5)"/>
+      </g>
+    </g>
+    <circle cx="208" cy="48" r="9" fill="#ffffff"/>
+
+    <!-- Star Layer -->
+    <g fill="#ffffff">
+      <circle cx="44" cy="62" r="2"/>
+      <circle cx="82" cy="30" r="1.4"/>
+      <circle cx="122" cy="52" r="1.8"/>
+      <circle cx="218" cy="150" r="1.6"/>
+      <circle cx="36" cy="150" r="1.4"/>
+      <circle cx="64" cy="214" r="2"/>
+      <circle cx="196" cy="224" r="1.4"/>
+      <circle cx="30" cy="104" r="1.2"/>
+    </g>
+
+    <!-- Skybox: a lit, slightly worn cube with its Faces -->
+    <g transform="translate(0 -17)">
+      <!-- soft contact shadow so it sits in the scene -->
+      <path d="M128 90 L196 128 L196 190 L128 226 L60 190 L60 128 Z" fill="#000" opacity="0.5" filter="url(#softShadow)"/>
+
+      <path d="M128 78 L190 112 L128 146 L66 112 Z" fill="url(#faceTop)"/>
+      <path d="M66 112 L128 146 L128 212 L66 178 Z" fill="url(#faceLeft)"/>
+      <path d="M190 112 L128 146 L128 212 L190 178 Z" fill="url(#faceRight)"/>
+
+      <g clip-path="url(#cubeClip)">
+        <!-- coloured bounce light from the nebula -->
+        <path d="M66 112 L128 146 L128 212 L66 178 Z" fill="url(#rimCyan)"/>
+        <path d="M190 112 L128 146 L128 212 L190 178 Z" fill="url(#rimPink)"/>
+
+        <!-- brushed wear and faint smudges -->
+        <g filter="url(#wear)" opacity="0.35">
+          <path d="M128 78 L190 112 L190 178 L128 212 L66 178 L66 112 Z" fill="#000"/>
+        </g>
+        <g filter="url(#smudge)" opacity="0.3">
+          <path d="M128 78 L190 112 L190 178 L128 212 L66 178 L66 112 Z" fill="#000"/>
+        </g>
+
+        <!-- a few fine scratches -->
+        <g stroke="#ffffff" stroke-width="0.6" stroke-opacity="0.3" fill="none" stroke-linecap="round">
+          <path d="M108 100 L130 112"/>
+          <path d="M146 96 L160 104"/>
+          <path d="M78 142 L90 149"/>
+          <path d="M152 186 L170 176"/>
+        </g>
+      </g>
+
+      <!-- edge definition: bright catch-light on the lit edges, dark seams elsewhere -->
+      <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M66 112 L128 78 L190 112" stroke="#ffffff" stroke-opacity="0.7" stroke-width="1.2"/>
+        <path d="M66 112 L128 146 L190 112" stroke="#ffffff" stroke-opacity="0.25" stroke-width="1"/>
+        <path d="M128 146 L128 212" stroke="#14151a" stroke-opacity="0.55" stroke-width="1.2"/>
+        <path d="M66 112 L66 178 L128 212 L190 178 L190 112" stroke="#14151a" stroke-opacity="0.5" stroke-width="1"/>
+      </g>
+    </g>
+
+    <!-- overall finish: faint grime, vignette, grain -->
+    <rect width="256" height="256" fill="url(#vignette)"/>
+    <rect width="256" height="256" filter="url(#grain)" opacity="0.18"/>
+  </g>
+</svg>
