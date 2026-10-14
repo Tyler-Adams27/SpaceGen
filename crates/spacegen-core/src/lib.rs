@@ -103,7 +103,7 @@ impl Default for StarFieldSettings {
 enum LayerSettings {
     StarField(StarFieldSettings),
     Nebula(NebulaSettings),
-    GalaxyBand,
+    GalaxyBand(GalaxyBandSettings),
     Sun,
 }
 
@@ -112,7 +112,7 @@ impl LayerSettings {
         match kind {
             LayerKind::StarField => LayerSettings::StarField(StarFieldSettings::default()),
             LayerKind::Nebula => LayerSettings::Nebula(NebulaSettings::default()),
-            LayerKind::GalaxyBand => LayerSettings::GalaxyBand,
+            LayerKind::GalaxyBand => LayerSettings::GalaxyBand(GalaxyBandSettings::default()),
             LayerKind::Sun => LayerSettings::Sun,
         }
     }
@@ -121,9 +121,56 @@ impl LayerSettings {
         match self {
             LayerSettings::StarField(_) => LayerKind::StarField,
             LayerSettings::Nebula(_) => LayerKind::Nebula,
-            LayerSettings::GalaxyBand => LayerKind::GalaxyBand,
+            LayerSettings::GalaxyBand(_) => LayerKind::GalaxyBand,
             LayerSettings::Sun => LayerKind::Sun,
         }
+    }
+}
+
+/// A Milky Way-style band of light across the sky. Every field is 0.0 to 1.0.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GalaxyBandSettings {
+    /// Tilt of the band away from the horizon, 0.0 (flat) to 1.0 (vertical).
+    pub tilt: f32,
+    /// How wide the band is across the sky.
+    pub width: f32,
+    pub brightness: f32,
+    /// How strongly dark dust lanes cut through the band.
+    pub dust: f32,
+    /// Color of the band's bright core.
+    pub color_a: [f32; 3],
+    /// Color of the band's outer glow.
+    pub color_b: [f32; 3],
+}
+
+impl Default for GalaxyBandSettings {
+    fn default() -> Self {
+        GalaxyBandSettings {
+            tilt: 0.3,
+            width: 0.4,
+            brightness: 0.5,
+            dust: 0.5,
+            color_a: [1.0, 0.85, 0.6],
+            color_b: [0.5, 0.6, 1.0],
+        }
+    }
+}
+
+impl GalaxyBandSettings {
+    fn validate(&self) -> Result<(), EditError> {
+        check_unit_range(&[
+            ("tilt", self.tilt),
+            ("width", self.width),
+            ("brightness", self.brightness),
+            ("dust", self.dust),
+            ("color_a", self.color_a[0]),
+            ("color_a", self.color_a[1]),
+            ("color_a", self.color_a[2]),
+            ("color_b", self.color_b[0]),
+            ("color_b", self.color_b[1]),
+            ("color_b", self.color_b[2]),
+        ])
     }
 }
 
@@ -152,6 +199,13 @@ impl Layer {
     pub fn nebula_settings(&self) -> Option<&NebulaSettings> {
         match &self.settings {
             LayerSettings::Nebula(settings) => Some(settings),
+            _ => None,
+        }
+    }
+
+    pub fn galaxy_band_settings(&self) -> Option<&GalaxyBandSettings> {
+        match &self.settings {
+            LayerSettings::GalaxyBand(settings) => Some(settings),
             _ => None,
         }
     }
@@ -323,6 +377,25 @@ impl Project {
         self.seed = seed;
     }
 
+    /// Gives every Layer new random colors derived from `seed`; nothing else changes. Star tints
+    /// stay close to white; nebula and galaxy band colors are vivid, with the second hue a
+    /// little way around the color wheel from the first.
+    pub fn randomize_colors(&mut self, seed: Seed) {
+        for layer in &mut self.layers {
+            let mut picker = ColorPicker(seed.layer_seed(layer.id).0);
+            match &mut layer.settings {
+                LayerSettings::StarField(settings) => settings.tint = picker.pastel(),
+                LayerSettings::Nebula(settings) => {
+                    (settings.color_a, settings.color_b) = picker.vivid_pair();
+                }
+                LayerSettings::GalaxyBand(settings) => {
+                    (settings.color_a, settings.color_b) = picker.vivid_pair();
+                }
+                LayerSettings::Sun => {}
+            }
+        }
+    }
+
     pub fn set_opacity(&mut self, layer: LayerId, opacity: f32) -> Result<(), EditError> {
         if !(0.0..=1.0).contains(&opacity) {
             return Err(EditError::InvalidOpacity { opacity });
@@ -350,6 +423,23 @@ impl Project {
             });
         }
         target.settings = LayerSettings::Nebula(settings);
+        Ok(())
+    }
+
+    pub fn set_galaxy_band_settings(
+        &mut self,
+        layer: LayerId,
+        settings: GalaxyBandSettings,
+    ) -> Result<(), EditError> {
+        settings.validate()?;
+        let target = self.layer_mut(layer)?;
+        if !matches!(target.settings, LayerSettings::GalaxyBand(_)) {
+            return Err(EditError::WrongKind {
+                layer,
+                expected: "galaxy band",
+            });
+        }
+        target.settings = LayerSettings::GalaxyBand(settings);
         Ok(())
     }
 
@@ -441,7 +531,8 @@ impl Project {
             let checked = match &layer.settings {
                 LayerSettings::StarField(settings) => settings.validate(),
                 LayerSettings::Nebula(settings) => settings.validate(),
-                LayerSettings::GalaxyBand | LayerSettings::Sun => Ok(()),
+                LayerSettings::GalaxyBand(settings) => settings.validate(),
+                LayerSettings::Sun => Ok(()),
             };
             if let Err(EditError::InvalidSetting { field, value }) = checked {
                 return Err(ProjectError::InvalidSetting {
@@ -523,11 +614,59 @@ impl EngineConvention {
     }
 }
 
+/// A small deterministic random color source (SplitMix64) for `Project::randomize_colors`.
+struct ColorPicker(u64);
+
+impl ColorPicker {
+    /// The next number in 0.0 to 1.0.
+    fn next(&mut self) -> f32 {
+        self.0 = self.0.wrapping_add(0x9E3779B97F4A7C15);
+        let mut z = self.0;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
+        ((z ^ (z >> 31)) >> 40) as f32 / (1u64 << 24) as f32
+    }
+
+    fn pastel(&mut self) -> [f32; 3] {
+        let (hue, saturation) = (self.next(), self.next() * 0.3);
+        hsv_to_rgb(hue, saturation, 1.0)
+    }
+
+    fn vivid(&mut self, hue: f32) -> [f32; 3] {
+        let (saturation, value) = (0.55 + self.next() * 0.45, 0.8 + self.next() * 0.2);
+        hsv_to_rgb(hue, saturation, value)
+    }
+
+    fn vivid_pair(&mut self) -> ([f32; 3], [f32; 3]) {
+        let hue = self.next();
+        let second = (hue + 0.15 + self.next() * 0.35).fract();
+        (self.vivid(hue), self.vivid(second))
+    }
+}
+
+/// Hue, saturation and value, each 0.0 to 1.0, as red, green and blue.
+fn hsv_to_rgb(hue: f32, saturation: f32, value: f32) -> [f32; 3] {
+    let sector = hue.fract() * 6.0;
+    let (index, fraction) = (sector.floor() as u32 % 6, sector.fract());
+    let low = value * (1.0 - saturation);
+    let falling = value * (1.0 - saturation * fraction);
+    let rising = value * (1.0 - saturation * (1.0 - fraction));
+    match index {
+        0 => [value, rising, low],
+        1 => [falling, value, low],
+        2 => [low, value, rising],
+        3 => [low, falling, value],
+        4 => [rising, low, value],
+        _ => [value, low, falling],
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DragField {
     Opacity,
     StarField,
     Nebula,
+    GalaxyBand,
 }
 
 pub struct History {
@@ -588,6 +727,26 @@ impl History {
         self.edit(Some((layer, DragField::Nebula)), |project| {
             project.set_nebula_settings(layer, settings)
         })
+    }
+
+    pub fn set_galaxy_band_settings(
+        &mut self,
+        layer: LayerId,
+        settings: GalaxyBandSettings,
+    ) -> Result<(), EditError> {
+        self.edit(Some((layer, DragField::GalaxyBand)), |project| {
+            project.set_galaxy_band_settings(layer, settings)
+        })
+    }
+
+    /// Sets the Seed and gives every Layer new random colors, as one undo step.
+    pub fn randomize(&mut self, seed: Seed) {
+        self.edit(None, |project| {
+            project.set_seed(seed);
+            project.randomize_colors(seed);
+            Ok(())
+        })
+        .expect("randomizing cannot fail");
     }
 
     pub fn set_seed(&mut self, seed: Seed) {

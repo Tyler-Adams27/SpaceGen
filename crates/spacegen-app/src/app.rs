@@ -342,7 +342,7 @@ impl SpacegenApp {
                 self.history.set_seed(spacegen_core::Seed(seed));
             }
             if ui.button("Randomize").clicked() {
-                self.history.set_seed(fresh_seed());
+                self.history.randomize(fresh_seed());
             }
         });
     }
@@ -411,6 +411,9 @@ impl SpacegenApp {
             if ui.button("Add nebula").clicked() {
                 self.selected = Some(self.history.add_layer(LayerKind::Nebula));
             }
+            if ui.button("Add galaxy band").clicked() {
+                self.selected = Some(self.history.add_layer(LayerKind::GalaxyBand));
+            }
         });
     }
 
@@ -427,12 +430,13 @@ impl SpacegenApp {
         else {
             return;
         };
-        let (kind, blend, opacity, star, nebula) = (
+        let (kind, blend, opacity, star, nebula, band) = (
             layer.kind(),
             layer.blend(),
             layer.opacity(),
             layer.star_field_settings().copied(),
             layer.nebula_settings().copied(),
+            layer.galaxy_band_settings().copied(),
         );
         ui.heading(format!("{} #{}", kind_name(kind), id.0));
 
@@ -469,6 +473,23 @@ impl SpacegenApp {
             });
             if changed {
                 let result = self.history.set_nebula_settings(id, settings);
+                self.report(result);
+            }
+            return;
+        }
+        if let Some(mut settings) = band {
+            let mut changed = false;
+            changed |= unit_slider(ui, &mut settings.tilt, "Tilt");
+            changed |= unit_slider(ui, &mut settings.width, "Width");
+            changed |= unit_slider(ui, &mut settings.brightness, "Brightness");
+            changed |= unit_slider(ui, &mut settings.dust, "Dust lanes");
+            ui.horizontal(|ui| {
+                ui.label("Colors");
+                changed |= ui.color_edit_button_rgb(&mut settings.color_a).changed();
+                changed |= ui.color_edit_button_rgb(&mut settings.color_b).changed();
+            });
+            if changed {
+                let result = self.history.set_galaxy_band_settings(id, settings);
                 self.report(result);
             }
             return;

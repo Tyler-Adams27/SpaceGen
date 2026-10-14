@@ -21,15 +21,21 @@ const NEBULA_THRESHOLD_FULL: f32 = 0.30; // cloud cut-off at coverage 1.0 (lower
 const NEBULA_THRESHOLD_NONE: f32 = 0.85; // cloud cut-off at coverage 0.0
 const NEBULA_SOFTNESS: f32 = 0.30;       // how gradually cloud fades in above the cut-off
 const NEBULA_GAIN: f32 = 0.9;            // overall nebula brightness at brightness 1.0
+const BAND_MIN_SIGMA: f32 = 0.08;     // half-width of the band (sine of its angle off the centre line) at width 0.0
+const BAND_MAX_SIGMA: f32 = 0.55;     // ... and at width 1.0
+const BAND_CORE_FRACTION: f32 = 0.45; // the bright core is this fraction of the band width
+const BAND_DUST_FRACTION: f32 = 0.30; // dust lanes sit in this fraction of the band width
+const BAND_DUST_DEPTH: f32 = 0.92;    // how much light a full-strength dust lane removes
+const BAND_GAIN: f32 = 0.65;          // overall band brightness at brightness 1.0
 // ----------------------------------------------------------------------------
 
 struct Layer {
     seed: vec2<u32>,
     blend: u32,          // 0 = additive, 1 = screen
-    kind: u32,           // 0 = star field, 1 = nebula
-    params: vec4<f32>,   // stars: density, brightness, size, color variety; nebula: coverage, scale, brightness
-    color_a: vec4<f32>,  // stars: tint; nebula: first color; w = Layer opacity
-    color_b: vec4<f32>,  // nebula: second color
+    kind: u32,           // 0 = star field, 1 = nebula, 2 = galaxy band
+    params: vec4<f32>,   // stars: density, brightness, size, color variety; nebula: coverage, scale, brightness; galaxy band: tilt, width, brightness, dust
+    color_a: vec4<f32>,  // stars: tint; nebula, galaxy band: first color; w = Layer opacity
+    color_b: vec4<f32>,  // nebula, galaxy band: second color
 }
 
 struct Globals {
@@ -207,6 +213,36 @@ fn nebula_layer(d: vec3<f32>, layer: Layer) -> vec3<f32> {
     let color = mix(layer.color_a.xyz, layer.color_b.xyz, smoothstep(0.3, 0.7, tone));
     return color * cloud * cloud * brightness * NEBULA_GAIN;
 }
+
+fn galaxy_band_layer(d: vec3<f32>, layer: Layer) -> vec3<f32> {
+    let tilt = layer.params.x;
+    let width = layer.params.y;
+    let brightness = layer.params.z;
+    let dust = layer.params.w;
+    if (brightness <= 0.0) {
+        return vec3<f32>(0.0);
+    }
+    // The band is a great circle; tilt swings its plane from the horizon up toward vertical.
+    let angle = tilt * 0.5 * PI;
+    let normal = vec3<f32>(0.0, cos(angle), sin(angle));
+    let offset = dot(d, normal);
+    let sigma = mix(BAND_MIN_SIGMA, BAND_MAX_SIGMA, width);
+    let glow = exp(-(offset * offset) / (sigma * sigma));
+    // Clumps of brighter and thinner band, plus a fine grain of unresolved stars.
+    let clumps = fbm(d * 3.0, layer.seed);
+    let grain = fbm(d * 40.0, layer.seed ^ vec2<u32>(0x2C1B3C6Du, 0x297A2D39u));
+    var light = glow * mix(0.35, 1.0, smoothstep(0.25, 0.75, clumps)) * mix(0.6, 1.0, grain);
+    // Dust lanes: dark, broken-up streaks along the middle of the band.
+    let lane_sigma = sigma * BAND_DUST_FRACTION;
+    let lane = exp(-(offset * offset) / (lane_sigma * lane_sigma));
+    let breakup = smoothstep(0.35, 0.65, fbm(d * 7.0 + vec3<f32>(3.7, 11.1, 5.3), layer.seed ^ vec2<u32>(0x1B873593u, 0xCC9E2D51u)));
+    light *= 1.0 - dust * lane * breakup * BAND_DUST_DEPTH;
+    let core_sigma = sigma * BAND_CORE_FRACTION;
+    let core = exp(-(offset * offset) / (core_sigma * core_sigma));
+    let color = mix(layer.color_b.xyz, layer.color_a.xyz, core);
+    return color * light * brightness * BAND_GAIN;
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let uv = vec2<f32>(in.uv.x, mix(g.band.x, g.band.y, in.uv.y));
@@ -218,6 +254,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         var light = vec3<f32>(0.0);
         if (layer.kind == 1u) {
             light = nebula_layer(d, layer);
+        } else if (layer.kind == 2u) {
+            light = galaxy_band_layer(d, layer);
         } else {
             light = star_layer(d, layer);
         }

@@ -2,7 +2,7 @@
 //! panorama pixel's direction in the Face it falls on, using the Vulkan cube map face
 //! selection formulas, and check both renders show the same light.
 
-use spacegen_core::{Face, LayerKind, NebulaSettings, Project, Seed};
+use spacegen_core::{Face, GalaxyBandSettings, LayerKind, NebulaSettings, Project, Seed};
 use spacegen_render::{FaceImage, Renderer};
 
 const PANORAMA_WIDTH: u32 = 256;
@@ -122,6 +122,34 @@ fn the_six_faces_and_the_panorama_show_the_same_sky() {
                 coverage: 1.0,
                 scale: 0.9,
                 ..NebulaSettings::default()
+            },
+        )
+        .unwrap();
+
+    let Some(means) = faces_and_panorama_agree(&project) else {
+        eprintln!("SKIPPED: no software adapter");
+        return;
+    };
+
+    for (face, mean) in &means {
+        assert!(
+            *mean < 0.02,
+            "{face} and the panorama disagree: mean difference {mean}"
+        );
+    }
+}
+
+#[test]
+fn the_six_faces_and_the_panorama_show_the_same_galaxy_band() {
+    let mut project = Project::new(Seed(5));
+    let band = project.add_layer(LayerKind::GalaxyBand);
+    project
+        .set_galaxy_band_settings(
+            band,
+            GalaxyBandSettings {
+                width: 1.0,
+                brightness: 1.0,
+                ..GalaxyBandSettings::default()
             },
         )
         .unwrap();
