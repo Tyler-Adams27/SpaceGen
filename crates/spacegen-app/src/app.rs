@@ -443,6 +443,14 @@ impl SpacegenApp {
             layer.sun_settings().copied(),
         );
         ui.heading(format!("{} #{}", kind_name(kind), id.0));
+        if ui
+            .button("Re-roll this layer")
+            .on_hover_text("A new look and new colors for this layer only")
+            .clicked()
+        {
+            let result = self.history.reroll_layer(id, fresh_seed());
+            self.report(result);
+        }
 
         let mut new_opacity = opacity;
         if ui

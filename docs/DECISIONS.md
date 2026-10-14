@@ -111,3 +111,13 @@ The user said: "from here on, you will have agency… just get me a MVP. Documen
 - **Look:** a disc (radius 0.7 to 9 degrees, never under a pixel) at 8 times white at full brightness, so the HDRI keeps values above 1.0, plus a halo that fades over about six disc radii and a faint wide glare. The glare strength scales both. Tuning constants are at the top of `sky.wgsl`; the wide glare was lowered after a first render lifted the whole sky to grey.
 - **Old files:** `SunSettings` has `#[serde(default)]`, like the galaxy band, so a bare Sun Layer from an older file loads with the defaults.
 - **Faces-versus-panorama test:** uses six suns (one toward each Face) at low brightness. At full brightness the nearest-pixel comparison of an 8x-white disc edge reported a 0.034 mean difference on one Face; the same scene at lower brightness agrees, and a deliberate pixel-size-dependent mutation still fails by a wide margin (0.14 against the 0.02 limit).
+
+## Per-Layer re-roll (issue #8)
+
+- **A per-Layer `variation` number** (`u64`, saved with the Project, default 0) is mixed into the Layer's sub-seed by `Layer::seed_under`. Variation 0 returns exactly the old `Seed::layer_seed`, so every existing Project and every existing render is unchanged; a re-roll sets a non-zero variation (a Seed of 0 is stored as 1, so a re-roll can never return the original look). Files saved before this field existed load with 0 (`#[serde(default)]`), no format version bump. Alternative: re-rolling by rewriting the Layer's id, rejected because ids are how undo, duplicate and the UI refer to Layers.
+- **A re-roll also recolors that Layer**, matching what the whole-Project Randomize does, using the same color rules, and changes nothing else (opacity, blend, visibility, other settings, other Layers, the Project Seed). It is one undo step; two re-rolls are two steps and are never merged like a slider drag.
+- **The Sun's structure does not change** on a re-roll (a hand-placed Sun does not use its seed), only its color.
+- **The random number comes from the app** (`fresh_seed`), as for Randomize, so the core stays deterministic: `Project::reroll_layer(layer, seed)`.
+- **The whole-Project Randomize leaves variations alone.** It changes the Project Seed and every color; a re-rolled Layer still looks different from before because its base seed changed.
+- **UI:** a "Re-roll this layer" button under the selected Layer's heading.
+- **Tests:** isolation is proved in `render_reroll.rs` by hiding the re-rolled Layer and checking the others' pixels are identical, and a structure test compares a re-roll against the old structure in the new colors, so a color-only change would fail it.
