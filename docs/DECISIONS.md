@@ -87,3 +87,11 @@ The user said: "from here on, you will have agency… just get me a MVP. Documen
 ## Workflow
 
 - **Pull requests, not `main`** (user decision, 2026-10-14). Work goes on a branch and reaches `main` through a PR, so CI runs before merge. This replaces the earlier "commit locally, never push" rule in `CLAUDE.md`. PRs are not merged without the user's say-so.
+
+## Galaxy band Layer (issue #6)
+
+- **Settings:** `tilt`, `width`, `brightness`, `dust` (dust-lane strength), `color_a` (bright core) and `color_b` (outer glow), all 0.0 to 1.0 with the defaults tilt 0.3, width 0.4, brightness 0.5, dust 0.5, a warm core and cool edges. Validation, save/load, duplicate and undo drag merging copy the star field and nebula Layers.
+- **Shape:** one great circle across the sky. The plane's tilt swings from the horizon (0.0) toward vertical (1.0); its direction around the sky is fixed, so the user places the band with tilt and the Seed changes only its structure (clumps, grain, dust breaks). Alternative: a Seed-driven rotation, rejected because the same tilt would then land somewhere different per Seed and the placement controls would stop meaning anything.
+- **Look:** a Gaussian glow across the band (width sets its sigma), modulated by low-frequency clumps and a fine grain; dust lanes are a narrower Gaussian broken up by noise that subtracts light; color blends from `color_b` at the edge to `color_a` in the core. All of it is a function of the view direction only, so the Faces and the panorama agree (covered by the consistency test).
+- **Old files:** `GalaxyBandSettings` has `#[serde(default)]`, so a file saved when the band was a bare, undrawn Layer loads with the defaults. No format version bump.
+- **"Lit" in tests:** the glow is a Gaussian that fades toward zero without reaching it, so the width test counts pixels above 0.02 instead of any non-black pixel.
