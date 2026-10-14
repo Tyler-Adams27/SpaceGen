@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Build
+        run: cargo build --workspace --all-targets
+
+      - name: Lint
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      # Render tests skip themselves with "SKIPPED" when the software adapter is missing.
+      # On CI that would turn the run green while testing nothing, so fail on it.
+      - name: Test
+        shell: pwsh
+        run: |
+          cargo test --workspace -- --nocapture 2>&1 | Tee-Object -FilePath test-output.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (Select-String -Path test-output.txt -Pattern 'SKIPPED' -Quiet) {
+            Write-Error 'Render tests were skipped: no software adapter on this runner.'
+            exit 1
+          }

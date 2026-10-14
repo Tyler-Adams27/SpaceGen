@@ -1,5 +1,7 @@
 # SpaceGen
 
+[![CI](https://github.com/Tyler-Adams27/SpaceGen/actions/workflows/ci.yml/badge.svg)](https://github.com/Tyler-Adams27/SpaceGen/actions/workflows/ci.yml)
+
 A desktop app that generates procedural space skyboxes for game engines and 3D tools.
 Edit a sky live, then export it as six cube faces, an equirectangular panorama and an HDRI.
 
