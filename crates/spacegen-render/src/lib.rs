@@ -252,7 +252,7 @@ impl Renderer {
             .map_err(|error| RenderError(format!("GPU readback unavailable: {error}")))?;
         for row in mapped.chunks(padded_row_bytes as usize) {
             let floats: &[f32] = bytemuck::cast_slice(&row[..row_bytes as usize]);
-            pixels.extend(floats.chunks_exact(4).map(|p| [p[0], p[1], p[2], p[3]]));
+            pixels.extend_from_slice(floats.as_chunks::<4>().0);
         }
         drop(mapped);
         readback.unmap();

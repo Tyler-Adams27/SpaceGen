@@ -195,8 +195,14 @@ pub struct Project {
 #[derive(Debug)]
 pub enum ProjectError {
     Json(serde_json::Error),
-    UnsupportedVersion { found: u32, supported: u32 },
-    InvalidOpacity { layer: LayerId, opacity: f32 },
+    UnsupportedVersion {
+        found: u32,
+        supported: u32,
+    },
+    InvalidOpacity {
+        layer: LayerId,
+        opacity: f32,
+    },
     InvalidSetting {
         layer: LayerId,
         field: &'static str,
@@ -212,7 +218,11 @@ impl std::fmt::Display for ProjectError {
                 f,
                 "project file uses format version {found}, but this version of SpaceGen only supports up to format version {supported}"
             ),
-            ProjectError::InvalidSetting { layer, field, value } => write!(
+            ProjectError::InvalidSetting {
+                layer,
+                field,
+                value,
+            } => write!(
                 f,
                 "layer {} has {field} value {value}, which is outside 0.0 to 1.0",
                 layer.0
@@ -230,11 +240,24 @@ impl std::error::Error for ProjectError {}
 
 #[derive(Debug, PartialEq)]
 pub enum EditError {
-    InvalidOpacity { opacity: f32 },
-    UnknownLayer { layer: LayerId },
-    IndexOutOfRange { index: usize, layer_count: usize },
-    InvalidSetting { field: &'static str, value: f32 },
-    WrongKind { layer: LayerId, expected: &'static str },
+    InvalidOpacity {
+        opacity: f32,
+    },
+    UnknownLayer {
+        layer: LayerId,
+    },
+    IndexOutOfRange {
+        index: usize,
+        layer_count: usize,
+    },
+    InvalidSetting {
+        field: &'static str,
+        value: f32,
+    },
+    WrongKind {
+        layer: LayerId,
+        expected: &'static str,
+    },
 }
 
 impl std::fmt::Display for EditError {

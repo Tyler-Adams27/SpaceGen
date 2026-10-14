@@ -14,7 +14,9 @@ fn renderer() -> Option<Renderer> {
 }
 
 fn render(renderer: &Renderer, project: &Project) -> FaceImage {
-    renderer.render_face(project, Face::PositiveZ, SIZE).unwrap()
+    renderer
+        .render_face(project, Face::PositiveZ, SIZE)
+        .unwrap()
 }
 
 fn lit_pixels(image: &FaceImage) -> usize {
@@ -95,7 +97,9 @@ fn hidden_and_fully_transparent_layers_render_black() {
     let mut hidden = star_field_project(5);
     hidden.set_visible(hidden.layers()[0].id(), false).unwrap();
     let mut transparent = star_field_project(5);
-    transparent.set_opacity(transparent.layers()[0].id(), 0.0).unwrap();
+    transparent
+        .set_opacity(transparent.layers()[0].id(), 0.0)
+        .unwrap();
 
     assert_eq!(lit_pixels(&render(&renderer, &hidden)), 0);
     assert_eq!(lit_pixels(&render(&renderer, &transparent)), 0);
@@ -136,12 +140,18 @@ fn largest_difference(a: &FaceImage, b: &FaceImage) -> f32 {
 
 #[test]
 fn rendering_in_bands_gives_the_same_image_as_rendering_in_one_pass() {
-    let Some(whole_renderer) = renderer() else { return };
+    let Some(whole_renderer) = renderer() else {
+        return;
+    };
     let project = star_field_project(5);
-    let whole = whole_renderer.render_face(&project, Face::PositiveZ, 41).unwrap();
+    let whole = whole_renderer
+        .render_face(&project, Face::PositiveZ, 41)
+        .unwrap();
     let banded_renderer = Renderer::software().unwrap().with_max_band_rows(7);
 
-    let banded = banded_renderer.render_face(&project, Face::PositiveZ, 41).unwrap();
+    let banded = banded_renderer
+        .render_face(&project, Face::PositiveZ, 41)
+        .unwrap();
 
     assert!(lit_pixels(&whole) > 0);
     assert!(largest_difference(&whole, &banded) < 1e-3);
@@ -149,12 +159,16 @@ fn rendering_in_bands_gives_the_same_image_as_rendering_in_one_pass() {
 
 #[test]
 fn bands_also_cover_the_panorama() {
-    let Some(whole_renderer) = renderer() else { return };
+    let Some(whole_renderer) = renderer() else {
+        return;
+    };
     let project = star_field_project(5);
     let whole = whole_renderer.render_equirectangular(&project, 90).unwrap();
     let banded_renderer = Renderer::software().unwrap().with_max_band_rows(4);
 
-    let banded = banded_renderer.render_equirectangular(&project, 90).unwrap();
+    let banded = banded_renderer
+        .render_equirectangular(&project, 90)
+        .unwrap();
 
     assert!(largest_difference(&whole, &banded) < 1e-3);
 }

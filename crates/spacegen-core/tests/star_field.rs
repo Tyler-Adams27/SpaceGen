@@ -30,7 +30,10 @@ fn set_star_field_settings_replaces_the_settings_of_only_the_named_layer() {
     project.set_star_field_settings(first, chosen).unwrap();
 
     assert_eq!(project.layers()[0].star_field_settings(), Some(&chosen));
-    assert_eq!(project.layers()[1].star_field_settings().unwrap().density, 0.5);
+    assert_eq!(
+        project.layers()[1].star_field_settings().unwrap().density,
+        0.5
+    );
 }
 
 #[test]
@@ -39,17 +42,58 @@ fn star_field_settings_with_any_value_outside_zero_to_one_are_rejected_and_chang
     let layer = project.add_layer(LayerKind::StarField);
     let good = StarFieldSettings::default();
     let bad = [
-        ("density", StarFieldSettings { density: 1.1, ..good }),
-        ("brightness", StarFieldSettings { brightness: -0.1, ..good }),
-        ("size", StarFieldSettings { size: f32::NAN, ..good }),
-        ("color_variation", StarFieldSettings { color_variation: 2.0, ..good }),
-        ("tint", StarFieldSettings { tint: [1.0, 1.5, 1.0], ..good }),
-        ("tint", StarFieldSettings { tint: [f32::NAN, 1.0, 1.0], ..good }),
+        (
+            "density",
+            StarFieldSettings {
+                density: 1.1,
+                ..good
+            },
+        ),
+        (
+            "brightness",
+            StarFieldSettings {
+                brightness: -0.1,
+                ..good
+            },
+        ),
+        (
+            "size",
+            StarFieldSettings {
+                size: f32::NAN,
+                ..good
+            },
+        ),
+        (
+            "color_variation",
+            StarFieldSettings {
+                color_variation: 2.0,
+                ..good
+            },
+        ),
+        (
+            "tint",
+            StarFieldSettings {
+                tint: [1.0, 1.5, 1.0],
+                ..good
+            },
+        ),
+        (
+            "tint",
+            StarFieldSettings {
+                tint: [f32::NAN, 1.0, 1.0],
+                ..good
+            },
+        ),
     ];
 
     for (field, settings) in bad {
-        let error = project.set_star_field_settings(layer, settings).unwrap_err();
-        assert!(error.to_string().contains(field), "{field}: unexpected message: {error}");
+        let error = project
+            .set_star_field_settings(layer, settings)
+            .unwrap_err();
+        assert!(
+            error.to_string().contains(field),
+            "{field}: unexpected message: {error}"
+        );
     }
 
     assert_eq!(project.layers()[0].star_field_settings(), Some(&good));
@@ -64,7 +108,10 @@ fn star_field_settings_cannot_be_set_on_a_layer_of_another_kind() {
         .set_star_field_settings(nebula, StarFieldSettings::default())
         .unwrap_err();
 
-    assert!(error.to_string().contains("star field"), "unexpected message: {error}");
+    assert!(
+        error.to_string().contains("star field"),
+        "unexpected message: {error}"
+    );
     assert_eq!(project.layers()[0].kind(), LayerKind::Nebula);
     assert!(project.layers()[0].star_field_settings().is_none());
 }

@@ -20,5 +20,10 @@ fn a_project_without_star_fields_renders_opaque_black() {
 
     assert_eq!(image.size(), 16);
     assert_eq!(image.pixels().len(), 16 * 16);
-    assert!(image.pixels().iter().all(|pixel| *pixel == [0.0, 0.0, 0.0, 1.0]));
+    assert!(
+        image
+            .pixels()
+            .iter()
+            .all(|pixel| *pixel == [0.0, 0.0, 0.0, 1.0])
+    );
 }

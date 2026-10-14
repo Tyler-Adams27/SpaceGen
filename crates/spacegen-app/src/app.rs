@@ -353,7 +353,11 @@ impl SpacegenApp {
         for (index, &(id, kind, visible)) in rows.iter().enumerate().rev() {
             ui.horizontal(|ui| {
                 let mut shown = visible;
-                if ui.checkbox(&mut shown, "").on_hover_text("Visible").changed() {
+                if ui
+                    .checkbox(&mut shown, "")
+                    .on_hover_text("Visible")
+                    .changed()
+                {
                     let result = self.history.set_visible(id, shown);
                     self.report(result);
                 }
@@ -407,7 +411,13 @@ impl SpacegenApp {
         let Some(id) = self.selected else {
             return;
         };
-        let Some(layer) = self.history.project().layers().iter().find(|l| l.id() == id) else {
+        let Some(layer) = self
+            .history
+            .project()
+            .layers()
+            .iter()
+            .find(|l| l.id() == id)
+        else {
             return;
         };
         let (kind, blend, opacity, star, nebula) = (
@@ -482,10 +492,10 @@ impl SpacegenApp {
             ui.text_edit_singleline(&mut self.export.name);
         });
         ui.horizontal(|ui| {
-            if ui.button("Folder...").clicked() {
-                if let Some(folder) = rfd::FileDialog::new().pick_folder() {
-                    self.export.folder = Some(folder);
-                }
+            if ui.button("Folder...").clicked()
+                && let Some(folder) = rfd::FileDialog::new().pick_folder()
+            {
+                self.export.folder = Some(folder);
             }
             match &self.export.folder {
                 Some(folder) => ui.label(folder.display().to_string()),
@@ -496,7 +506,11 @@ impl SpacegenApp {
             .selected_text(format!("{0} x {0}", self.export.face_size))
             .show_ui(ui, |ui| {
                 for size in FACE_SIZES {
-                    ui.selectable_value(&mut self.export.face_size, size, format!("{size} x {size}"));
+                    ui.selectable_value(
+                        &mut self.export.face_size,
+                        size,
+                        format!("{size} x {size}"),
+                    );
                 }
             });
         ui.horizontal(|ui| {
@@ -523,7 +537,10 @@ impl SpacegenApp {
                 }
             });
         ui.checkbox(&mut self.export.faces, "Six cube faces");
-        ui.checkbox(&mut self.export.panorama, "Panorama image (equirectangular)");
+        ui.checkbox(
+            &mut self.export.panorama,
+            "Panorama image (equirectangular)",
+        );
         ui.checkbox(&mut self.export.hdri, "HDRI (.exr)");
 
         if ui
@@ -567,7 +584,8 @@ impl SpacegenApp {
 }
 
 fn unit_slider(ui: &mut egui::Ui, value: &mut f32, label: &str) -> bool {
-    ui.add(egui::Slider::new(value, 0.0..=1.0).text(label)).changed()
+    ui.add(egui::Slider::new(value, 0.0..=1.0).text(label))
+        .changed()
 }
 
 impl eframe::App for SpacegenApp {

@@ -8,7 +8,9 @@ use spacegen_render::{ExportOptions, Renderer, export_skybox};
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let dir = args.next().expect("usage: dump_sky <output dir> [face size]");
+    let dir = args
+        .next()
+        .expect("usage: dump_sky <output dir> [face size]");
     let face_size: u32 = args.next().map_or(512, |s| s.parse().expect("face size"));
 
     let renderer = Renderer::gpu().expect("no GPU adapter");

@@ -46,7 +46,11 @@ fn jpeg_export_writes_jpg_files_that_decode_at_the_face_size() {
 
     assert_eq!(written.len(), 6);
     assert!(written.iter().all(|p| p.extension().unwrap() == "jpg"));
-    assert!(written.iter().any(|p| p.file_name().unwrap() == "sky_px.jpg"));
+    assert!(
+        written
+            .iter()
+            .any(|p| p.file_name().unwrap() == "sky_px.jpg")
+    );
     for path in &written {
         let image = image::open(path).unwrap();
         assert_eq!((image.width(), image.height()), (16, 16));
@@ -106,8 +110,14 @@ fn the_hdri_is_a_floating_point_exr_that_keeps_light_brighter_than_white() {
     assert_eq!(written[0].file_name().unwrap(), "sky.exr");
     let image = image::open(&written[0]).unwrap().into_rgba32f();
     assert_eq!((image.width(), image.height()), (128, 64));
-    let brightest = image.pixels().map(|p| p[0].max(p[1]).max(p[2])).fold(0.0, f32::max);
-    assert!(brightest > 1.0, "expected values above 1.0, brightest was {brightest}");
+    let brightest = image
+        .pixels()
+        .map(|p| p[0].max(p[1]).max(p[2]))
+        .fold(0.0, f32::max);
+    assert!(
+        brightest > 1.0,
+        "expected values above 1.0, brightest was {brightest}"
+    );
 }
 
 #[test]
@@ -144,7 +154,8 @@ fn exporting_faces_writes_six_square_images_named_by_the_engine_convention() {
     };
     let dir = temp_dir("faces");
 
-    let written = export_skybox(&renderer, &star_project(), &dir, &faces_only(16), |_, _| {}).unwrap();
+    let written =
+        export_skybox(&renderer, &star_project(), &dir, &faces_only(16), |_, _| {}).unwrap();
 
     let mut names: Vec<String> = written
         .iter()

@@ -161,10 +161,8 @@ fn extension(format: ImageFormat) -> &'static str {
 fn save_image(image: &SkyImage, path: &Path, options: &ExportOptions) -> Result<(), ExportError> {
     match options.format {
         ImageFormat::Png => {
-            let mut buffer = image::ImageBuffer::<image::Rgb<u16>, Vec<u16>>::new(
-                image.width(),
-                image.height(),
-            );
+            let mut buffer =
+                image::ImageBuffer::<image::Rgb<u16>, Vec<u16>>::new(image.width(), image.height());
             for (target, source) in buffer.pixels_mut().zip(image.pixels()) {
                 *target = image::Rgb(std::array::from_fn(|c| {
                     (linear_to_srgb(source[c]) * 65535.0).round() as u16

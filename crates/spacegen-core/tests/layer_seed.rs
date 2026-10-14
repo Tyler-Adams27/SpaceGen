@@ -5,18 +5,12 @@ use spacegen_core::{LayerId, Seed};
 
 #[test]
 fn first_layer_of_seed_zero_gets_the_first_splitmix64_reference_output() {
-    assert_eq!(
-        Seed(0).layer_seed(LayerId(0)),
-        Seed(0xE220A8397B1DCDAF)
-    );
+    assert_eq!(Seed(0).layer_seed(LayerId(0)), Seed(0xE220A8397B1DCDAF));
 }
 
 #[test]
 fn second_layer_of_seed_zero_gets_the_second_splitmix64_reference_output() {
-    assert_eq!(
-        Seed(0).layer_seed(LayerId(1)),
-        Seed(0x6E789E6AA1B965F4)
-    );
+    assert_eq!(Seed(0).layer_seed(LayerId(1)), Seed(0x6E789E6AA1B965F4));
 }
 
 #[test]

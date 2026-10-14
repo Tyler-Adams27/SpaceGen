@@ -42,16 +42,49 @@ fn nebula_settings_with_any_value_outside_zero_to_one_are_rejected_and_change_no
     let layer = project.add_layer(LayerKind::Nebula);
     let good = NebulaSettings::default();
     let bad = [
-        ("coverage", NebulaSettings { coverage: 1.1, ..good }),
-        ("scale", NebulaSettings { scale: -0.1, ..good }),
-        ("brightness", NebulaSettings { brightness: f32::NAN, ..good }),
-        ("color_a", NebulaSettings { color_a: [0.0, 2.0, 0.0], ..good }),
-        ("color_b", NebulaSettings { color_b: [f32::NAN, 0.0, 0.0], ..good }),
+        (
+            "coverage",
+            NebulaSettings {
+                coverage: 1.1,
+                ..good
+            },
+        ),
+        (
+            "scale",
+            NebulaSettings {
+                scale: -0.1,
+                ..good
+            },
+        ),
+        (
+            "brightness",
+            NebulaSettings {
+                brightness: f32::NAN,
+                ..good
+            },
+        ),
+        (
+            "color_a",
+            NebulaSettings {
+                color_a: [0.0, 2.0, 0.0],
+                ..good
+            },
+        ),
+        (
+            "color_b",
+            NebulaSettings {
+                color_b: [f32::NAN, 0.0, 0.0],
+                ..good
+            },
+        ),
     ];
 
     for (field, settings) in bad {
         let error = project.set_nebula_settings(layer, settings).unwrap_err();
-        assert!(error.to_string().contains(field), "{field}: unexpected message: {error}");
+        assert!(
+            error.to_string().contains(field),
+            "{field}: unexpected message: {error}"
+        );
     }
 
     assert_eq!(project.layers()[0].nebula_settings(), Some(&good));
@@ -66,7 +99,10 @@ fn nebula_settings_cannot_be_set_on_a_layer_of_another_kind() {
         .set_nebula_settings(stars, NebulaSettings::default())
         .unwrap_err();
 
-    assert!(error.to_string().contains("nebula"), "unexpected message: {error}");
+    assert!(
+        error.to_string().contains("nebula"),
+        "unexpected message: {error}"
+    );
     assert!(project.layers()[0].nebula_settings().is_none());
     assert_eq!(project.layers()[0].kind(), LayerKind::StarField);
 }
@@ -83,7 +119,10 @@ fn loading_a_file_with_out_of_range_nebula_settings_is_rejected_naming_the_layer
 
     let message = error.to_string();
     assert!(message.contains("layer 1"), "unexpected message: {message}");
-    assert!(message.contains("coverage"), "unexpected message: {message}");
+    assert!(
+        message.contains("coverage"),
+        "unexpected message: {message}"
+    );
 }
 
 #[test]

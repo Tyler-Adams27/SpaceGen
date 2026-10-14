@@ -14,7 +14,9 @@ fn renderer() -> Option<Renderer> {
 }
 
 fn render(renderer: &Renderer, project: &Project) -> FaceImage {
-    renderer.render_face(project, Face::PositiveZ, SIZE).unwrap()
+    renderer
+        .render_face(project, Face::PositiveZ, SIZE)
+        .unwrap()
 }
 
 fn lit_pixels(image: &FaceImage) -> usize {
@@ -89,7 +91,9 @@ fn hidden_and_fully_transparent_nebulae_render_black() {
     let mut hidden = nebula_project(5, |_| {});
     hidden.set_visible(hidden.layers()[0].id(), false).unwrap();
     let mut transparent = nebula_project(5, |_| {});
-    transparent.set_opacity(transparent.layers()[0].id(), 0.0).unwrap();
+    transparent
+        .set_opacity(transparent.layers()[0].id(), 0.0)
+        .unwrap();
 
     assert_eq!(lit_pixels(&render(&renderer, &hidden)), 0);
     assert_eq!(lit_pixels(&render(&renderer, &transparent)), 0);
@@ -120,8 +124,20 @@ fn the_two_colors_both_show_up_in_the_clouds() {
 
     let image = render(&renderer, &two_tone);
 
-    assert!(image.pixels().iter().any(|p| p[0] > 0.05 && p[2] < p[0] * 0.5), "no color A clouds");
-    assert!(image.pixels().iter().any(|p| p[2] > 0.05 && p[0] < p[2] * 0.5), "no color B clouds");
+    assert!(
+        image
+            .pixels()
+            .iter()
+            .any(|p| p[0] > 0.05 && p[2] < p[0] * 0.5),
+        "no color A clouds"
+    );
+    assert!(
+        image
+            .pixels()
+            .iter()
+            .any(|p| p[2] > 0.05 && p[0] < p[2] * 0.5),
+        "no color B clouds"
+    );
 }
 
 #[test]

@@ -149,7 +149,10 @@ fn undo_and_redo_cover_star_field_settings() {
     };
 
     history.set_star_field_settings(layer, chosen).unwrap();
-    assert_eq!(history.project().layers()[0].star_field_settings(), Some(&chosen));
+    assert_eq!(
+        history.project().layers()[0].star_field_settings(),
+        Some(&chosen)
+    );
 
     history.undo();
     assert_eq!(
@@ -157,7 +160,10 @@ fn undo_and_redo_cover_star_field_settings() {
         Some(&StarFieldSettings::default())
     );
     history.redo();
-    assert_eq!(history.project().layers()[0].star_field_settings(), Some(&chosen));
+    assert_eq!(
+        history.project().layers()[0].star_field_settings(),
+        Some(&chosen)
+    );
 }
 
 #[test]
@@ -170,12 +176,24 @@ fn consecutive_settings_changes_to_one_layer_undo_as_a_single_step_but_not_with_
     };
 
     history.set_opacity(layer, 0.4).unwrap();
-    history.set_star_field_settings(layer, with_density(0.6)).unwrap();
-    history.set_star_field_settings(layer, with_density(0.7)).unwrap();
-    history.set_star_field_settings(layer, with_density(0.8)).unwrap();
+    history
+        .set_star_field_settings(layer, with_density(0.6))
+        .unwrap();
+    history
+        .set_star_field_settings(layer, with_density(0.7))
+        .unwrap();
+    history
+        .set_star_field_settings(layer, with_density(0.8))
+        .unwrap();
 
     history.undo();
-    assert_eq!(history.project().layers()[0].star_field_settings().unwrap().density, 0.5);
+    assert_eq!(
+        history.project().layers()[0]
+            .star_field_settings()
+            .unwrap()
+            .density,
+        0.5
+    );
     assert_eq!(history.project().layers()[0].opacity(), 0.4);
     history.undo();
     assert_eq!(history.project().layers()[0].opacity(), 1.0);
@@ -206,15 +224,39 @@ fn nebula_settings_changes_undo_and_redo_and_a_drag_is_one_step() {
         ..NebulaSettings::default()
     };
 
-    history.set_nebula_settings(layer, with_coverage(0.6)).unwrap();
-    history.set_nebula_settings(layer, with_coverage(0.7)).unwrap();
-    history.set_nebula_settings(layer, with_coverage(0.8)).unwrap();
-    assert_eq!(history.project().layers()[0].nebula_settings().unwrap().coverage, 0.8);
+    history
+        .set_nebula_settings(layer, with_coverage(0.6))
+        .unwrap();
+    history
+        .set_nebula_settings(layer, with_coverage(0.7))
+        .unwrap();
+    history
+        .set_nebula_settings(layer, with_coverage(0.8))
+        .unwrap();
+    assert_eq!(
+        history.project().layers()[0]
+            .nebula_settings()
+            .unwrap()
+            .coverage,
+        0.8
+    );
 
     history.undo();
-    assert_eq!(history.project().layers()[0].nebula_settings().unwrap().coverage, 0.5);
+    assert_eq!(
+        history.project().layers()[0]
+            .nebula_settings()
+            .unwrap()
+            .coverage,
+        0.5
+    );
     history.redo();
-    assert_eq!(history.project().layers()[0].nebula_settings().unwrap().coverage, 0.8);
+    assert_eq!(
+        history.project().layers()[0]
+            .nebula_settings()
+            .unwrap()
+            .coverage,
+        0.8
+    );
 }
 
 #[test]

@@ -49,7 +49,10 @@ fn editing_a_layer_that_does_not_exist_is_an_error_naming_it() {
 
     let error = project.set_opacity(LayerId(99), 0.5).unwrap_err();
 
-    assert!(error.to_string().contains("layer 99"), "unexpected message: {error}");
+    assert!(
+        error.to_string().contains("layer 99"),
+        "unexpected message: {error}"
+    );
 }
 
 #[test]
@@ -119,7 +122,10 @@ fn move_layer_to_an_index_past_the_top_is_an_error_and_leaves_the_stack_unchange
 
     let error = project.move_layer(bottom, 2).unwrap_err();
 
-    assert!(error.to_string().contains("index 2"), "unexpected message: {error}");
+    assert!(
+        error.to_string().contains("index 2"),
+        "unexpected message: {error}"
+    );
     assert_eq!(ids(&project), [LayerId(0), LayerId(1)]);
 }
 
