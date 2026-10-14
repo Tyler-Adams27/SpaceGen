@@ -31,7 +31,7 @@ Use `--release`: the sky is drawn on the GPU, but unoptimized builds make the wi
 - **Export** writes into a folder you choose:
   - six cube faces named for Unity, Unreal or Godot, as 16-bit PNG or JPEG, 512 to 8192 pixels;
   - one equirectangular panorama (up to 8192 wide);
-  - an OpenEXR HDRI (`.exr`, floating point) for Blender and engines that take HDR skies.
+  - an HDRI for Blender and engines that take HDR skies: OpenEXR (`.exr`, floating point) or Radiance (`.hdr`).
 
   Face pixels always use the Khronos/Vulkan cubemap orientation; only the file names change per engine.
   See `docs/research/engine-cubemap-conventions.md` for what is and is not confirmed about each engine.

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use spacegen_core::{EngineConvention, ImageFormat, LayerKind, Project, Seed};
+use spacegen_core::{EngineConvention, HdriFormat, ImageFormat, LayerKind, Project, Seed};
 use spacegen_render::{ExportOptions, Renderer, export_skybox, linear_to_srgb, panorama_width};
 
 fn temp_dir(label: &str) -> PathBuf {
@@ -25,6 +25,7 @@ fn faces_only(face_size: u32) -> ExportOptions {
         faces: true,
         panorama: false,
         hdri: false,
+        hdri_format: HdriFormat::OpenExr,
         jpeg_quality: 95,
     }
 }
@@ -200,4 +201,47 @@ fn linear_light_is_encoded_with_the_srgb_curve() {
 fn encoding_clamps_values_outside_zero_to_one() {
     assert_eq!(linear_to_srgb(-0.5), 0.0);
     assert_eq!(linear_to_srgb(4.0), 1.0);
+}
+
+#[test]
+fn the_hdri_can_be_written_as_radiance_hdr_and_keeps_light_brighter_than_white() {
+    let Ok(renderer) = Renderer::software() else {
+        eprintln!("SKIPPED: no software adapter");
+        return;
+    };
+    let dir = temp_dir("hdri-radiance");
+    let mut bright = star_project();
+    let layer = bright.layers()[0].id();
+    bright
+        .set_star_field_settings(
+            layer,
+            spacegen_core::StarFieldSettings {
+                brightness: 1.0,
+                density: 1.0,
+                size: 1.0,
+                ..spacegen_core::StarFieldSettings::default()
+            },
+        )
+        .unwrap();
+    let options = ExportOptions {
+        faces: false,
+        hdri: true,
+        hdri_format: HdriFormat::Radiance,
+        ..faces_only(32)
+    };
+
+    let written = export_skybox(&renderer, &bright, &dir, &options, |_, _| {}).unwrap();
+
+    assert_eq!(written.len(), 1);
+    assert_eq!(written[0].file_name().unwrap(), "sky.hdr");
+    let image = image::open(&written[0]).unwrap().into_rgb32f();
+    assert_eq!((image.width(), image.height()), (128, 64));
+    let brightest = image
+        .pixels()
+        .map(|p| p[0].max(p[1]).max(p[2]))
+        .fold(0.0, f32::max);
+    assert!(
+        brightest > 1.0,
+        "expected values above 1.0, brightest was {brightest}"
+    );
 }

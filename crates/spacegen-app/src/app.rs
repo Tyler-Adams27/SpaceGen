@@ -3,7 +3,8 @@ use std::sync::mpsc::{self, Receiver};
 
 use eframe::egui;
 use spacegen_core::{
-    BlendMode, EditError, EngineConvention, History, ImageFormat, LayerId, LayerKind, Project,
+    BlendMode, EditError, EngineConvention, HdriFormat, History, ImageFormat, LayerId, LayerKind,
+    Project,
 };
 use spacegen_render::{
     ExportOptions, Projection, Renderer, SkyUniforms, camera_basis, export_skybox,
@@ -36,6 +37,7 @@ struct ExportSettings {
     faces: bool,
     panorama: bool,
     hdri: bool,
+    hdri_format: HdriFormat,
     jpeg_quality: u8,
 }
 
@@ -50,6 +52,7 @@ impl Default for ExportSettings {
             faces: true,
             panorama: true,
             hdri: true,
+            hdri_format: HdriFormat::OpenExr,
             jpeg_quality: 95,
         }
     }
@@ -213,6 +216,7 @@ impl SpacegenApp {
             faces: self.export.faces,
             panorama: self.export.panorama,
             hdri: self.export.hdri,
+            hdri_format: self.export.hdri_format,
             jpeg_quality: self.export.jpeg_quality,
         };
         let (sender, receiver) = mpsc::channel();
@@ -541,7 +545,13 @@ impl SpacegenApp {
             &mut self.export.panorama,
             "Panorama image (equirectangular)",
         );
-        ui.checkbox(&mut self.export.hdri, "HDRI (.exr)");
+        ui.horizontal(|ui| {
+            ui.checkbox(&mut self.export.hdri, "HDRI");
+            ui.add_enabled_ui(self.export.hdri, |ui| {
+                ui.selectable_value(&mut self.export.hdri_format, HdriFormat::OpenExr, ".exr");
+                ui.selectable_value(&mut self.export.hdri_format, HdriFormat::Radiance, ".hdr");
+            });
+        });
 
         if ui
             .add_enabled(self.can_export(), egui::Button::new("Export"))

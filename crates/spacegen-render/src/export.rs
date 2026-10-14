@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use spacegen_core::{EngineConvention, Face, ImageFormat, Project};
+use spacegen_core::{EngineConvention, Face, HdriFormat, ImageFormat, Project};
 
 use crate::{RenderError, Renderer, SkyImage};
 
@@ -48,8 +48,9 @@ pub struct ExportOptions {
     pub faces: bool,
     /// Write one equirectangular panorama image.
     pub panorama: bool,
-    /// Write the equirectangular panorama as a floating-point OpenEXR HDRI.
+    /// Write the equirectangular panorama as a floating-point HDRI, in `hdri_format`.
     pub hdri: bool,
+    pub hdri_format: HdriFormat,
     /// JPEG quality, 1 to 100.
     pub jpeg_quality: u8,
 }
@@ -133,8 +134,15 @@ pub fn export_skybox(
         }
         if options.hdri {
             progress(written.len(), total);
-            let path = dir.join(format!("{}.exr", options.name));
-            save_exr(&image, &path)?;
+            let path = dir.join(format!(
+                "{}.{}",
+                options.name,
+                hdri_extension(options.hdri_format)
+            ));
+            match options.hdri_format {
+                HdriFormat::OpenExr => save_exr(&image, &path)?,
+                HdriFormat::Radiance => save_radiance(&image, &path)?,
+            }
             written.push(path);
         }
     }
@@ -149,6 +157,28 @@ fn save_exr(image: &SkyImage, path: &Path) -> Result<(), ExportError> {
     }
     buffer.save(path)?;
     Ok(())
+}
+
+fn save_radiance(image: &SkyImage, path: &Path) -> Result<(), ExportError> {
+    let pixels: Vec<image::Rgb<f32>> = image
+        .pixels()
+        .iter()
+        .map(|p| image::Rgb([p[0], p[1], p[2]]))
+        .collect();
+    let file = std::io::BufWriter::new(std::fs::File::create(path)?);
+    image::codecs::hdr::HdrEncoder::new(file).encode(
+        &pixels,
+        image.width() as usize,
+        image.height() as usize,
+    )?;
+    Ok(())
+}
+
+fn hdri_extension(format: HdriFormat) -> &'static str {
+    match format {
+        HdriFormat::OpenExr => "exr",
+        HdriFormat::Radiance => "hdr",
+    }
 }
 
 fn extension(format: ImageFormat) -> &'static str {

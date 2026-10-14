@@ -471,6 +471,13 @@ pub enum ImageFormat {
     Jpeg,
 }
 
+/// File format of the floating-point HDRI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HdriFormat {
+    OpenExr,
+    Radiance,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EngineConvention {
     Unity,
