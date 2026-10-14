@@ -122,7 +122,6 @@ The user said: "from here on, you will have agency… just get me a MVP. Documen
 - **UI:** a "Re-roll this layer" button under the selected Layer's heading.
 - **Tests:** isolation is proved in `render_reroll.rs` by hiding the re-rolled Layer and checking the others' pixels are identical, and a structure test compares a re-roll against the old structure in the new colors, so a color-only change would fail it.
 
-
 ## App icon
 
 - **The window icon is `assets/icon.png`** (256x256 RGBA), embedded with `include_bytes!` and decoded by `eframe::icon_data::from_png_bytes` (`icon::app_icon`), then set with `ViewportBuilder::with_icon`. `assets/logo.svg` is the source: a rounded tile with a neon nebula, galaxy band, a sun with rays and a grey cube standing for the Skybox and its Faces.
