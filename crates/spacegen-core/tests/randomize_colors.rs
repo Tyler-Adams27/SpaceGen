@@ -5,6 +5,7 @@ fn full_project() -> Project {
     project.add_layer(LayerKind::StarField);
     project.add_layer(LayerKind::Nebula);
     project.add_layer(LayerKind::GalaxyBand);
+    project.add_layer(LayerKind::Sun);
     project
 }
 
@@ -19,6 +20,7 @@ fn colors(project: &Project) -> Vec<[f32; 3]> {
         nebula.color_b,
         band.color_a,
         band.color_b,
+        layers[3].sun_settings().unwrap().color,
     ]
 }
 
@@ -73,7 +75,12 @@ fn star_tints_stay_close_to_white_while_nebula_and_band_colors_are_vivid() {
             "seed {seed}: star tint {:?}",
             all[0]
         );
-        for vivid in &all[1..] {
+        assert!(
+            spread(&all[5]) <= 0.31,
+            "seed {seed}: sun color {:?}",
+            all[5]
+        );
+        for vivid in &all[1..5] {
             assert!(spread(vivid) >= 0.3, "seed {seed}: dull color {vivid:?}");
         }
     }
@@ -90,7 +97,7 @@ fn randomizing_leaves_everything_but_colors_alone() {
     let strip = |p: &Project| {
         let mut json: serde_json::Value = serde_json::from_str(&p.to_json()).unwrap();
         for layer in json["layers"].as_array_mut().unwrap() {
-            for key in ["tint", "color_a", "color_b"] {
+            for key in ["tint", "color", "color_a", "color_b"] {
                 layer["settings"].as_object_mut().unwrap().remove(key);
             }
         }

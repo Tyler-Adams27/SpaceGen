@@ -104,7 +104,7 @@ enum LayerSettings {
     StarField(StarFieldSettings),
     Nebula(NebulaSettings),
     GalaxyBand(GalaxyBandSettings),
-    Sun,
+    Sun(SunSettings),
 }
 
 impl LayerSettings {
@@ -113,7 +113,7 @@ impl LayerSettings {
             LayerKind::StarField => LayerSettings::StarField(StarFieldSettings::default()),
             LayerKind::Nebula => LayerSettings::Nebula(NebulaSettings::default()),
             LayerKind::GalaxyBand => LayerSettings::GalaxyBand(GalaxyBandSettings::default()),
-            LayerKind::Sun => LayerSettings::Sun,
+            LayerKind::Sun => LayerSettings::Sun(SunSettings::default()),
         }
     }
 
@@ -122,8 +122,53 @@ impl LayerSettings {
             LayerSettings::StarField(_) => LayerKind::StarField,
             LayerSettings::Nebula(_) => LayerKind::Nebula,
             LayerSettings::GalaxyBand(_) => LayerKind::GalaxyBand,
-            LayerSettings::Sun => LayerKind::Sun,
+            LayerSettings::Sun(_) => LayerKind::Sun,
         }
+    }
+}
+
+/// A bright star with a glare, placed by hand. Every field is 0.0 to 1.0.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SunSettings {
+    /// Which way around the horizon the Sun lies: 0.0 is straight ahead (+Z), 0.25 a quarter turn
+    /// to the right (+X), 0.5 behind.
+    pub azimuth: f32,
+    /// How high the Sun sits: 0.0 straight down, 0.5 on the horizon, 1.0 straight up.
+    pub elevation: f32,
+    /// Size of the bright disc.
+    pub size: f32,
+    pub brightness: f32,
+    /// Strength of the glow and glare around the disc.
+    pub glare: f32,
+    pub color: [f32; 3],
+}
+
+impl Default for SunSettings {
+    fn default() -> Self {
+        SunSettings {
+            azimuth: 0.0,
+            elevation: 0.6,
+            size: 0.5,
+            brightness: 0.5,
+            glare: 0.5,
+            color: [1.0, 0.95, 0.85],
+        }
+    }
+}
+
+impl SunSettings {
+    fn validate(&self) -> Result<(), EditError> {
+        check_unit_range(&[
+            ("azimuth", self.azimuth),
+            ("elevation", self.elevation),
+            ("size", self.size),
+            ("brightness", self.brightness),
+            ("glare", self.glare),
+            ("color", self.color[0]),
+            ("color", self.color[1]),
+            ("color", self.color[2]),
+        ])
     }
 }
 
@@ -199,6 +244,13 @@ impl Layer {
     pub fn nebula_settings(&self) -> Option<&NebulaSettings> {
         match &self.settings {
             LayerSettings::Nebula(settings) => Some(settings),
+            _ => None,
+        }
+    }
+
+    pub fn sun_settings(&self) -> Option<&SunSettings> {
+        match &self.settings {
+            LayerSettings::Sun(settings) => Some(settings),
             _ => None,
         }
     }
@@ -391,7 +443,7 @@ impl Project {
                 LayerSettings::GalaxyBand(settings) => {
                     (settings.color_a, settings.color_b) = picker.vivid_pair();
                 }
-                LayerSettings::Sun => {}
+                LayerSettings::Sun(settings) => settings.color = picker.pastel(),
             }
         }
     }
@@ -423,6 +475,23 @@ impl Project {
             });
         }
         target.settings = LayerSettings::Nebula(settings);
+        Ok(())
+    }
+
+    pub fn set_sun_settings(
+        &mut self,
+        layer: LayerId,
+        settings: SunSettings,
+    ) -> Result<(), EditError> {
+        settings.validate()?;
+        let target = self.layer_mut(layer)?;
+        if !matches!(target.settings, LayerSettings::Sun(_)) {
+            return Err(EditError::WrongKind {
+                layer,
+                expected: "sun",
+            });
+        }
+        target.settings = LayerSettings::Sun(settings);
         Ok(())
     }
 
@@ -532,7 +601,7 @@ impl Project {
                 LayerSettings::StarField(settings) => settings.validate(),
                 LayerSettings::Nebula(settings) => settings.validate(),
                 LayerSettings::GalaxyBand(settings) => settings.validate(),
-                LayerSettings::Sun => Ok(()),
+                LayerSettings::Sun(settings) => settings.validate(),
             };
             if let Err(EditError::InvalidSetting { field, value }) = checked {
                 return Err(ProjectError::InvalidSetting {
@@ -667,6 +736,7 @@ enum DragField {
     StarField,
     Nebula,
     GalaxyBand,
+    Sun,
 }
 
 pub struct History {
@@ -726,6 +796,16 @@ impl History {
     ) -> Result<(), EditError> {
         self.edit(Some((layer, DragField::Nebula)), |project| {
             project.set_nebula_settings(layer, settings)
+        })
+    }
+
+    pub fn set_sun_settings(
+        &mut self,
+        layer: LayerId,
+        settings: SunSettings,
+    ) -> Result<(), EditError> {
+        self.edit(Some((layer, DragField::Sun)), |project| {
+            project.set_sun_settings(layer, settings)
         })
     }
 

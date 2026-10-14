@@ -27,15 +27,22 @@ const BAND_CORE_FRACTION: f32 = 0.45; // the bright core is this fraction of the
 const BAND_DUST_FRACTION: f32 = 0.30; // dust lanes sit in this fraction of the band width
 const BAND_DUST_DEPTH: f32 = 0.92;    // how much light a full-strength dust lane removes
 const BAND_GAIN: f32 = 0.65;          // overall band brightness at brightness 1.0
+const SUN_MIN_RADIUS: f32 = 0.012;    // angular radius (radians) of the disc at size 0.0
+const SUN_MAX_RADIUS: f32 = 0.16;     // ... and at size 1.0
+const SUN_PIXEL_FLOOR: f32 = 0.9;     // the disc is never smaller than this many pixels
+const SUN_PEAK: f32 = 8.0;            // disc intensity at brightness 1.0; above 1.0 so the EXR keeps it
+const SUN_HALO_GAIN: f32 = 2.5;       // halo intensity at the disc edge at glare 1.0
+const SUN_HALO_REACH: f32 = 6.0;      // halo fades by 1/e over this many disc radii
+const SUN_GLARE_GAIN: f32 = 0.25;     // the faint wide glare, at glare 1.0
 // ----------------------------------------------------------------------------
 
 struct Layer {
     seed: vec2<u32>,
     blend: u32,          // 0 = additive, 1 = screen
-    kind: u32,           // 0 = star field, 1 = nebula, 2 = galaxy band
+    kind: u32,           // 0 = star field, 1 = nebula, 2 = galaxy band, 3 = sun
     params: vec4<f32>,   // stars: density, brightness, size, color variety; nebula: coverage, scale, brightness; galaxy band: tilt, width, brightness, dust
     color_a: vec4<f32>,  // stars: tint; nebula, galaxy band: first color; w = Layer opacity
-    color_b: vec4<f32>,  // nebula, galaxy band: second color
+    color_b: vec4<f32>,  // nebula, galaxy band: second color; sun: x = glare
 }
 
 struct Globals {
@@ -243,6 +250,25 @@ fn galaxy_band_layer(d: vec3<f32>, layer: Layer) -> vec3<f32> {
     return color * light * brightness * BAND_GAIN;
 }
 
+fn sun_layer(d: vec3<f32>, layer: Layer) -> vec3<f32> {
+    let brightness = layer.params.w;
+    let glare = layer.color_b.x;
+    if (brightness <= 0.0) {
+        return vec3<f32>(0.0);
+    }
+    // Azimuth 0 looks toward +Z and 0.25 a quarter turn toward +X, like the panorama's centre.
+    let lon = layer.params.x * TAU;
+    let lat = (layer.params.y - 0.5) * PI;
+    let direction = vec3<f32>(sin(lon) * cos(lat), sin(lat), cos(lon) * cos(lat));
+    // The angle from the Sun, from the chord so it stays accurate right next to the disc.
+    let angle = 2.0 * asin(min(length(d - direction) * 0.5, 1.0));
+    let radius = max(mix(SUN_MIN_RADIUS, SUN_MAX_RADIUS, layer.params.z), g.pixel.x * SUN_PIXEL_FLOOR);
+    let disc = 1.0 - smoothstep(radius * 0.85, radius, angle);
+    let halo = glare * SUN_HALO_GAIN * exp(-angle / (radius * SUN_HALO_REACH));
+    let wide = glare * SUN_GLARE_GAIN * pow(radius / (angle + radius), 2.0);
+    return layer.color_a.xyz * (disc * SUN_PEAK + halo + wide) * brightness;
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let uv = vec2<f32>(in.uv.x, mix(g.band.x, g.band.y, in.uv.y));
@@ -256,6 +282,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             light = nebula_layer(d, layer);
         } else if (layer.kind == 2u) {
             light = galaxy_band_layer(d, layer);
+        } else if (layer.kind == 3u) {
+            light = sun_layer(d, layer);
         } else {
             light = star_layer(d, layer);
         }

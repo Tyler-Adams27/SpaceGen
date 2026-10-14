@@ -414,6 +414,9 @@ impl SpacegenApp {
             if ui.button("Add galaxy band").clicked() {
                 self.selected = Some(self.history.add_layer(LayerKind::GalaxyBand));
             }
+            if ui.button("Add sun").clicked() {
+                self.selected = Some(self.history.add_layer(LayerKind::Sun));
+            }
         });
     }
 
@@ -430,13 +433,14 @@ impl SpacegenApp {
         else {
             return;
         };
-        let (kind, blend, opacity, star, nebula, band) = (
+        let (kind, blend, opacity, star, nebula, band, sun) = (
             layer.kind(),
             layer.blend(),
             layer.opacity(),
             layer.star_field_settings().copied(),
             layer.nebula_settings().copied(),
             layer.galaxy_band_settings().copied(),
+            layer.sun_settings().copied(),
         );
         ui.heading(format!("{} #{}", kind_name(kind), id.0));
 
@@ -490,6 +494,23 @@ impl SpacegenApp {
             });
             if changed {
                 let result = self.history.set_galaxy_band_settings(id, settings);
+                self.report(result);
+            }
+            return;
+        }
+        if let Some(mut settings) = sun {
+            let mut changed = false;
+            changed |= unit_slider(ui, &mut settings.azimuth, "Direction");
+            changed |= unit_slider(ui, &mut settings.elevation, "Height");
+            changed |= unit_slider(ui, &mut settings.size, "Size");
+            changed |= unit_slider(ui, &mut settings.brightness, "Brightness");
+            changed |= unit_slider(ui, &mut settings.glare, "Glare");
+            ui.horizontal(|ui| {
+                ui.label("Color");
+                changed |= ui.color_edit_button_rgb(&mut settings.color).changed();
+            });
+            if changed {
+                let result = self.history.set_sun_settings(id, settings);
                 self.report(result);
             }
             return;
