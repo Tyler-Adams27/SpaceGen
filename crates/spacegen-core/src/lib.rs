@@ -377,6 +377,25 @@ impl Project {
         self.seed = seed;
     }
 
+    /// Gives every Layer new random colors derived from `seed`; nothing else changes. Star tints
+    /// stay close to white; nebula and galaxy band colors are vivid, with the second hue a
+    /// little way around the color wheel from the first.
+    pub fn randomize_colors(&mut self, seed: Seed) {
+        for layer in &mut self.layers {
+            let mut picker = ColorPicker(seed.layer_seed(layer.id).0);
+            match &mut layer.settings {
+                LayerSettings::StarField(settings) => settings.tint = picker.pastel(),
+                LayerSettings::Nebula(settings) => {
+                    (settings.color_a, settings.color_b) = picker.vivid_pair();
+                }
+                LayerSettings::GalaxyBand(settings) => {
+                    (settings.color_a, settings.color_b) = picker.vivid_pair();
+                }
+                LayerSettings::Sun => {}
+            }
+        }
+    }
+
     pub fn set_opacity(&mut self, layer: LayerId, opacity: f32) -> Result<(), EditError> {
         if !(0.0..=1.0).contains(&opacity) {
             return Err(EditError::InvalidOpacity { opacity });
@@ -595,6 +614,53 @@ impl EngineConvention {
     }
 }
 
+/// A small deterministic random color source (SplitMix64) for `Project::randomize_colors`.
+struct ColorPicker(u64);
+
+impl ColorPicker {
+    /// The next number in 0.0 to 1.0.
+    fn next(&mut self) -> f32 {
+        self.0 = self.0.wrapping_add(0x9E3779B97F4A7C15);
+        let mut z = self.0;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
+        ((z ^ (z >> 31)) >> 40) as f32 / (1u64 << 24) as f32
+    }
+
+    fn pastel(&mut self) -> [f32; 3] {
+        let (hue, saturation) = (self.next(), self.next() * 0.3);
+        hsv_to_rgb(hue, saturation, 1.0)
+    }
+
+    fn vivid(&mut self, hue: f32) -> [f32; 3] {
+        let (saturation, value) = (0.55 + self.next() * 0.45, 0.8 + self.next() * 0.2);
+        hsv_to_rgb(hue, saturation, value)
+    }
+
+    fn vivid_pair(&mut self) -> ([f32; 3], [f32; 3]) {
+        let hue = self.next();
+        let second = (hue + 0.15 + self.next() * 0.35).fract();
+        (self.vivid(hue), self.vivid(second))
+    }
+}
+
+/// Hue, saturation and value, each 0.0 to 1.0, as red, green and blue.
+fn hsv_to_rgb(hue: f32, saturation: f32, value: f32) -> [f32; 3] {
+    let sector = hue.fract() * 6.0;
+    let (index, fraction) = (sector.floor() as u32 % 6, sector.fract());
+    let low = value * (1.0 - saturation);
+    let falling = value * (1.0 - saturation * fraction);
+    let rising = value * (1.0 - saturation * (1.0 - fraction));
+    match index {
+        0 => [value, rising, low],
+        1 => [falling, value, low],
+        2 => [low, value, rising],
+        3 => [low, falling, value],
+        4 => [rising, low, value],
+        _ => [value, low, falling],
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DragField {
     Opacity,
@@ -671,6 +737,16 @@ impl History {
         self.edit(Some((layer, DragField::GalaxyBand)), |project| {
             project.set_galaxy_band_settings(layer, settings)
         })
+    }
+
+    /// Sets the Seed and gives every Layer new random colors, as one undo step.
+    pub fn randomize(&mut self, seed: Seed) {
+        self.edit(None, |project| {
+            project.set_seed(seed);
+            project.randomize_colors(seed);
+            Ok(())
+        })
+        .expect("randomizing cannot fail");
     }
 
     pub fn set_seed(&mut self, seed: Seed) {

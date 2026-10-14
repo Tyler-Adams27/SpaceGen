@@ -342,7 +342,7 @@ impl SpacegenApp {
                 self.history.set_seed(spacegen_core::Seed(seed));
             }
             if ui.button("Randomize").clicked() {
-                self.history.set_seed(fresh_seed());
+                self.history.randomize(fresh_seed());
             }
         });
     }
