@@ -63,6 +63,7 @@ Layer order is +X, -X, +Y, -Y, +Z, -Z. This is the spec-level convention; which 
 - Six separate files: build a Cubemap resource from six Images in layer order; exactly 6 images of equal size/format required. https://github.com/godotengine/godot/blob/master/scene/resources/image_texture.cpp
 - Equirectangular (PanoramaSkyMaterial): must be equirectangular; `.hdr` and `.exr` supported (HDR strongly recommended). https://docs.godotengine.org/en/stable/classes/class_panoramaskymaterial.html and the importing_images page above (also documents HDR Clamp Exposure, HDR as sRGB).
 - **Confirmed in practice (user, 2026-10-14):** SpaceGen's exported panorama in a `PanoramaSkyMaterial` shows no seam and is oriented correctly. Six-Face import into Godot is still unchecked.
+- **Confirmed in practice (user, 2026-10-14):** the six Faces, written in the Khronos/Vulkan orientation with only file names varying, tile correctly in Unity, Unreal and Godot with no flip or rotation applied. This supersedes the "unchecked" note above; the per-face UNCONFIRMED cells in the table describe what the docs fail to state, not a problem observed in use.
 - Mapping from sky shader source: `uv = (atan2(dir.x, -dir.z) wrapped to [0,2pi) / 2pi, acos(dir.y) / pi)`. So u=0 at -Z, u=0.25 at +X, u=0.5 at +Z (image centre looks toward +Z), u=0.75 at -X; v=0 at +Y (top row is up). https://github.com/godotengine/godot/blob/master/servers/rendering/renderer_rd/shaders/environment/sky.glsl (lines ~226-232). Master branch code; older releases may differ.
 
 ### Blender
