@@ -13,4 +13,5 @@ spacegen-core = { version = "0.1.0", path = "../spacegen-core" }
 spacegen-render = { version = "0.1.0", path = "../spacegen-render" }
 
 [dev-dependencies]
+egui_kittest = "0.36"
 pollster = "1.0.1"
