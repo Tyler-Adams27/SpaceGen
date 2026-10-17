@@ -7,18 +7,22 @@ use spacegen_core::{
     PngBitDepth, Project,
 };
 use spacegen_render::{
-    CancelToken, ExportError, ExportOptions, Projection, Renderer, SkyUniforms, camera_basis,
-    existing_outputs, export_skybox,
+    CancelToken, ExportError, ExportOptions, MAX_LAYERS, Projection, Renderer, SkyUniforms,
+    camera_basis, existing_outputs, export_skybox,
 };
 
+use crate::layer_cap::{CapStatus, cap_status};
 use crate::preview::{PreviewCallback, PreviewResources};
 use crate::preview_view::{PreviewMode, panorama_rect};
+use crate::quality::QualityGovernor;
 use crate::seed_source::fresh_seed;
 use crate::settings::{Settings, settings_path as default_settings_path};
 use crate::unsaved::{Action, Choice, Guard};
 
 const FACE_SIZES: [u32; 5] = [512, 1024, 2048, 4096, 8192];
 const DEFAULT_FOV: f32 = 1.2;
+/// How long without input before the Preview is drawn at full size again.
+const IDLE_SECONDS: f64 = 0.4;
 
 enum ExportMessage {
     Progress(usize, usize),
@@ -50,6 +54,12 @@ pub struct SpacegenApp {
     /// Files an export would replace, waiting for the user to confirm.
     overwrite_pending: Option<Vec<PathBuf>>,
     preview_mode: PreviewMode,
+    quality: QualityGovernor,
+    /// The scale the Preview is drawn at this frame (1.0 = full size).
+    preview_scale: f32,
+    /// egui time of the last user input, and whether the previous frame had input.
+    last_input_time: f64,
+    input_last_frame: bool,
     /// The settings JSON as last written, so unchanged settings are not rewritten.
     persisted_settings: String,
     job: Option<ExportJob>,
@@ -123,6 +133,10 @@ impl SpacegenApp {
             recent_to_open: None,
             overwrite_pending: None,
             preview_mode: PreviewMode::FreeLook,
+            quality: QualityGovernor::default(),
+            preview_scale: 1.0,
+            last_input_time: f64::NEG_INFINITY,
+            input_last_frame: false,
             job: None,
             status: "Drag the sky to look around, scroll to zoom.".to_string(),
             shown_title: String::new(),
@@ -536,7 +550,22 @@ impl SpacegenApp {
             .map(|l| (l.id(), l.kind(), l.visible()))
             .collect();
         let count = rows.len();
+        let visible_count = rows.iter().filter(|r| r.2).count();
+        let cap = cap_status(visible_count, MAX_LAYERS);
         ui.label("Layers (top first)");
+        ui.label(format!("{visible_count} of {MAX_LAYERS} visible Layers"));
+        if let CapStatus::Over(extra) = cap {
+            ui.colored_label(
+                ui.visuals().warn_fg_color,
+                format!(
+                    "The top {extra} visible Layer{} not drawn: at most {MAX_LAYERS} are. Hide or delete some.",
+                    if extra == 1 { " is" } else { "s are" }
+                ),
+            );
+        }
+        let room = cap == CapStatus::Room;
+        let full_hint =
+            format!("At most {MAX_LAYERS} visible Layers are drawn. Hide or delete one first.");
         // Drag-and-drop reorder: the handle starts a drag carrying the Layer id; the row under
         // the pointer on release is the new index. Up/Down stay as the keyboard fallback.
         let mut row_rects: Vec<(usize, egui::Rect)> = Vec::with_capacity(count);
@@ -581,7 +610,11 @@ impl SpacegenApp {
                     let result = self.history.move_layer(id, index - 1);
                     self.report(result);
                 }
-                if ui.button("Copy").clicked() {
+                if ui
+                    .add_enabled(room, egui::Button::new("Copy"))
+                    .on_disabled_hover_text(&full_hint)
+                    .clicked()
+                {
                     match self.history.duplicate_layer(id) {
                         Ok(copy) => self.selected = Some(copy),
                         Err(error) => self.report::<()>(Err(error)),
@@ -619,16 +652,32 @@ impl SpacegenApp {
             }
         }
         ui.horizontal(|ui| {
-            if ui.button("Add star field").clicked() {
+            if ui
+                .add_enabled(room, egui::Button::new("Add star field"))
+                .on_disabled_hover_text(&full_hint)
+                .clicked()
+            {
                 self.selected = Some(self.history.add_layer(LayerKind::StarField));
             }
-            if ui.button("Add nebula").clicked() {
+            if ui
+                .add_enabled(room, egui::Button::new("Add nebula"))
+                .on_disabled_hover_text(&full_hint)
+                .clicked()
+            {
                 self.selected = Some(self.history.add_layer(LayerKind::Nebula));
             }
-            if ui.button("Add galaxy band").clicked() {
+            if ui
+                .add_enabled(room, egui::Button::new("Add galaxy band"))
+                .on_disabled_hover_text(&full_hint)
+                .clicked()
+            {
                 self.selected = Some(self.history.add_layer(LayerKind::GalaxyBand));
             }
-            if ui.button("Add sun").clicked() {
+            if ui
+                .add_enabled(room, egui::Button::new("Add sun"))
+                .on_disabled_hover_text(&full_hint)
+                .clicked()
+            {
                 self.selected = Some(self.history.add_layer(LayerKind::Sun));
             }
         });
@@ -864,19 +913,67 @@ impl SpacegenApp {
         }
     }
 
+    /// Decides how sharp this frame's Preview is: full size once the user has paused, otherwise the
+    /// size the last frames' speed allows (see `QualityGovernor`).
+    fn update_preview_quality(&mut self, ctx: &egui::Context) {
+        let (now, dt, input) = ctx.input(|i| {
+            let input = i.pointer.any_down()
+                || i.pointer.delta() != egui::Vec2::ZERO
+                || i.smooth_scroll_delta != egui::Vec2::ZERO
+                || !i.events.is_empty();
+            (i.time, i.unstable_dt, input)
+        });
+        if input {
+            self.last_input_time = now;
+        }
+        // Only frames that followed each other directly say how fast drawing is; a long gap is
+        // just the app waiting for input.
+        if input && self.input_last_frame && dt < 0.5 {
+            self.quality.record_frame(dt * 1000.0, self.preview_scale);
+        }
+        self.input_last_frame = input;
+        let idle = now - self.last_input_time > IDLE_SECONDS;
+        self.preview_scale = self.quality.scale(idle);
+        if !idle && self.preview_scale < 1.0 {
+            // Come back to draw the sharp frame once the user pauses.
+            ctx.request_repaint_after(std::time::Duration::from_secs_f64(IDLE_SECONDS + 0.05));
+        }
+    }
+
+    /// The offscreen size to draw at for a panel of `rect`, and the scale actually used.
+    fn reduced_size(&self, rect: egui::Rect, pixels_per_point: f32) -> (Option<[u32; 2]>, f32) {
+        if self.preview_scale >= 0.99 {
+            return (None, 1.0);
+        }
+        let width = (rect.width() * pixels_per_point * self.preview_scale)
+            .ceil()
+            .max(1.0);
+        let height = (rect.height() * pixels_per_point * self.preview_scale)
+            .ceil()
+            .max(1.0);
+        let actual = height / (rect.height() * pixels_per_point).max(1.0);
+        (Some([width as u32, height as u32]), actual)
+    }
+
     /// The whole sky at once, as the equirectangular panorama the Export writes (not draggable).
     fn flat_preview(&mut self, ui: &mut egui::Ui) {
         let (area, _) = ui.allocate_exact_size(ui.available_size(), egui::Sense::hover());
         let rect = panorama_rect(area);
-        let pixel_angle =
-            std::f32::consts::TAU / (rect.width().max(1.0) * ui.ctx().pixels_per_point());
+        let ppp = ui.ctx().pixels_per_point();
+        let (reduced_size, scale) = self.reduced_size(rect, ppp);
+        let pixel_angle = std::f32::consts::TAU / (rect.width().max(1.0) * ppp * scale);
         let uniforms = SkyUniforms::new(
             self.history.project(),
             Projection::Equirectangular,
             pixel_angle,
         );
-        ui.painter()
-            .add(PreviewCallback { uniforms }.paint_callback(rect));
+        ui.painter().add(
+            PreviewCallback {
+                uniforms,
+                reduced_size,
+            }
+            .paint_callback(rect),
+        );
     }
 
     fn preview(&mut self, ui: &mut egui::Ui) {
@@ -901,15 +998,22 @@ impl SpacegenApp {
             let scroll = ui.input(|input| input.smooth_scroll_delta.y);
             self.fov = (self.fov * (1.0 - scroll * 0.002)).clamp(0.2, 2.4);
         }
-        let pixel_angle = self.fov / (height * ui.ctx().pixels_per_point());
+        let ppp = ui.ctx().pixels_per_point();
+        let (reduced_size, scale) = self.reduced_size(rect, ppp);
+        let pixel_angle = self.fov / (height * ppp * scale);
         let basis = camera_basis(self.yaw, self.pitch, self.fov, rect.width() / height);
         let uniforms = SkyUniforms::new(
             self.history.project(),
             Projection::Basis(basis),
             pixel_angle,
         );
-        ui.painter()
-            .add(PreviewCallback { uniforms }.paint_callback(rect));
+        ui.painter().add(
+            PreviewCallback {
+                uniforms,
+                reduced_size,
+            }
+            .paint_callback(rect),
+        );
     }
 }
 
@@ -923,6 +1027,7 @@ impl eframe::App for SpacegenApp {
         let ctx = ui.ctx().clone();
         self.poll_export();
         self.handle_shortcuts(&ctx);
+        self.update_preview_quality(&ctx);
         if ctx.input(|i| i.viewport().close_requested()) && !self.close_confirmed && self.is_dirty()
         {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);

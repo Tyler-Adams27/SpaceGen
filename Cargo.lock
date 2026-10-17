@@ -2996,6 +2996,7 @@ name = "spacegen"
 version = "0.1.0"
 dependencies = [
  "eframe",
+ "pollster 1.0.1",
  "rfd",
  "serde",
  "serde_json",
