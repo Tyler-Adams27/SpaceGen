@@ -24,6 +24,7 @@ Use `--release`: the sky is drawn on the GPU, but unoptimized builds make the wi
 ## Using it
 
 - **Look around** in the Preview: drag to turn, scroll to zoom.
+  Switch to *Flat panorama* above the Preview to see the whole sky at once, as it will be in the exported panorama (not draggable; 2:1, centred).
 - **Seed** decides the sky. Type one or press *Randomize*; the same seed and settings always give the same sky.
 - **Layers** stack bottom to top. Each has visibility, opacity and a blend mode (additive or screen).
   *Star field* has density, brightness, star size, color variety and a tint; *Nebula* has coverage, cloud size, brightness and two colors; *Galaxy band* has tilt, width, brightness, dust lanes and two colors (core and outer glow); *Sun* has direction, height, size, brightness, glare and a color.

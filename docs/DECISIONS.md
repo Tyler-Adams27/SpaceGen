@@ -158,3 +158,10 @@ The user said: "from here on, you will have agency… just get me a MVP. Documen
 - **Recent menu:** a "Recent" menu in the project bar, disabled when empty. Choosing one goes through the same unsaved-changes prompt as Open. A recent file that fails to open is dropped from the list.
 - **Not remembered:** window size and position, camera, and the Project itself (the app still starts on the starter Project). The issue title said "window state"; the Done-when list did not, so it was left out.
 - **Tests:** `settings.rs` covers the round trip, missing, corrupt and partial files, and the recent list rules; the dedupe and cap were mutation-checked. The Recent menu and the per-frame write are GUI glue and were only checked by launching.
+
+## Preview: flat panorama toggle (issue #14)
+
+- **Two buttons above the Preview**, "Free look" and "Flat panorama" (`PreviewMode`). Flat uses the existing `Projection::Equirectangular`, so it matches the exported panorama pixel for pixel (same shader path). The camera (yaw, pitch, zoom) is kept while in flat mode and is back as it was when switching to Free look.
+- **The flat view is the largest centred 2:1 rectangle** that fits the Preview area (`panorama_rect`), because the shader maps the whole rectangle to 360 by 180 degrees and any other shape would stretch the sky. The bars around it show the panel background. It is not draggable or zoomable: the point is to see everything. Alternative: fill the area and stretch, rejected as misleading.
+- **The optional Face outline overlay is not done.** Cube edges are curves in an equirectangular image; drawing them correctly is its own piece of work and the issue marks it optional. Left open on #14's "later a Face inspector" line.
+- **Tests:** `panorama_rect` (wide, tall and exactly 2:1 areas), written red first. The toggle and the paint call are GUI glue; only a launch was checked, the view was not looked at on screen.
