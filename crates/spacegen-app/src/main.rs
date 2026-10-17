@@ -1,6 +1,7 @@
 mod app;
 mod icon;
 mod preview;
+mod preview_view;
 mod seed_source;
 mod settings;
 mod unsaved;

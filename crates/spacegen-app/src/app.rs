@@ -12,6 +12,7 @@ use spacegen_render::{
 };
 
 use crate::preview::{PreviewCallback, PreviewResources};
+use crate::preview_view::{PreviewMode, panorama_rect};
 use crate::seed_source::fresh_seed;
 use crate::settings::{Settings, settings_path as default_settings_path};
 use crate::unsaved::{Action, Choice, Guard};
@@ -46,6 +47,7 @@ pub struct SpacegenApp {
     settings_path: Option<PathBuf>,
     /// A recent file picked from the menu, waiting for the unsaved-changes answer.
     recent_to_open: Option<PathBuf>,
+    preview_mode: PreviewMode,
     /// The settings JSON as last written, so unchanged settings are not rewritten.
     persisted_settings: String,
     job: Option<ExportJob>,
@@ -117,6 +119,7 @@ impl SpacegenApp {
             settings,
             settings_path,
             recent_to_open: None,
+            preview_mode: PreviewMode::FreeLook,
             job: None,
             status: "Drag the sky to look around, scroll to zoom.".to_string(),
             shown_title: String::new(),
@@ -786,7 +789,30 @@ impl SpacegenApp {
         }
     }
 
+    /// The whole sky at once, as the equirectangular panorama the Export writes (not draggable).
+    fn flat_preview(&mut self, ui: &mut egui::Ui) {
+        let (area, _) = ui.allocate_exact_size(ui.available_size(), egui::Sense::hover());
+        let rect = panorama_rect(area);
+        let pixel_angle =
+            std::f32::consts::TAU / (rect.width().max(1.0) * ui.ctx().pixels_per_point());
+        let uniforms = SkyUniforms::new(
+            self.history.project(),
+            Projection::Equirectangular,
+            pixel_angle,
+        );
+        ui.painter()
+            .add(PreviewCallback { uniforms }.paint_callback(rect));
+    }
+
     fn preview(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.selectable_value(&mut self.preview_mode, PreviewMode::FreeLook, "Free look");
+            ui.selectable_value(&mut self.preview_mode, PreviewMode::Flat, "Flat panorama");
+        });
+        if self.preview_mode == PreviewMode::Flat {
+            self.flat_preview(ui);
+            return;
+        }
         let (rect, response) = ui.allocate_exact_size(ui.available_size(), egui::Sense::drag());
         let height = rect.height().max(1.0);
         if response.dragged() {
