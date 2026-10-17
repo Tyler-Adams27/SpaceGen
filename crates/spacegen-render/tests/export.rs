@@ -4,7 +4,7 @@ use spacegen_core::{
     EngineConvention, HdriFormat, ImageFormat, LayerKind, PngBitDepth, Project, Seed,
 };
 use spacegen_render::{
-    CancelToken, ExportError, ExportOptions, Renderer, export_skybox, linear_to_srgb,
+    CancelToken, ExportError, ExportOptions, Renderer, export_skybox, hdri_width, linear_to_srgb,
     panorama_width,
 };
 
@@ -187,11 +187,15 @@ fn exporting_faces_writes_six_square_images_named_by_the_engine_convention() {
 }
 
 #[test]
-fn the_panorama_is_four_faces_wide_but_never_wider_than_8192() {
+fn the_panorama_is_four_faces_wide_with_no_cap_but_the_hdri_stops_at_8192() {
     assert_eq!(panorama_width(512), 2048);
     assert_eq!(panorama_width(2048), 8192);
-    assert_eq!(panorama_width(4096), 8192);
-    assert_eq!(panorama_width(8192), 8192);
+    assert_eq!(panorama_width(4096), 16384);
+    assert_eq!(panorama_width(8192), 32768);
+    assert_eq!(hdri_width(512), 2048);
+    assert_eq!(hdri_width(2048), 8192);
+    assert_eq!(hdri_width(4096), 8192);
+    assert_eq!(hdri_width(8192), 8192);
 }
 
 #[test]
@@ -373,7 +377,9 @@ fn streamed_files_decode_to_exactly_the_in_memory_render_for_every_format() {
     // 3-row bands, so every image really is written in several pieces. (Banded and single-pass
     // renders may differ by a pixel on some GPUs, so each file is compared with the render made
     // by this same Renderer.)
-    let Ok(renderer) = Renderer::software().map(|r| r.with_max_band_rows(3)) else {
+    let Ok(renderer) =
+        Renderer::software().map(|r| r.with_max_band_rows(3).with_max_tile_width(24))
+    else {
         eprintln!("SKIPPED: no software adapter");
         return;
     };
