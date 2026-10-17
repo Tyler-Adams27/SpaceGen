@@ -363,7 +363,11 @@ impl SpacegenApp {
         for (index, &(id, kind, visible)) in rows.iter().enumerate().rev() {
             let row = ui.horizontal(|ui| {
                 let handle = ui
-                    .add(egui::Label::new("::").sense(egui::Sense::drag()))
+                    .add(
+                        egui::Label::new("::")
+                            .selectable(false)
+                            .sense(egui::Sense::drag()),
+                    )
                     .on_hover_cursor(egui::CursorIcon::Grab)
                     .on_hover_text("Drag to reorder");
                 handle.dnd_set_drag_payload(id);
