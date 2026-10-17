@@ -2,6 +2,7 @@ mod app;
 mod icon;
 mod preview;
 mod seed_source;
+mod unsaved;
 
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {

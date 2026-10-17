@@ -13,6 +13,7 @@ use spacegen_render::{
 
 use crate::preview::{PreviewCallback, PreviewResources};
 use crate::seed_source::fresh_seed;
+use crate::unsaved::{Action, Choice, Guard};
 
 const FACE_SIZES: [u32; 5] = [512, 1024, 2048, 4096, 8192];
 const DEFAULT_FOV: f32 = 1.2;
@@ -76,6 +77,8 @@ pub struct SpacegenApp {
     job: Option<ExportJob>,
     status: String,
     shown_title: String,
+    unsaved: Guard,
+    close_confirmed: bool,
 }
 
 fn starter_project() -> Project {
@@ -135,6 +138,8 @@ impl SpacegenApp {
             job: None,
             status: "Drag the sky to look around, scroll to zoom.".to_string(),
             shown_title: String::new(),
+            unsaved: Guard::default(),
+            close_confirmed: false,
         }
     }
 
@@ -181,7 +186,8 @@ impl SpacegenApp {
         }
     }
 
-    fn save_project(&mut self, ask_for_path: bool) {
+    /// Returns whether the Project was saved.
+    fn save_project(&mut self, ask_for_path: bool) -> bool {
         let path = match (&self.path, ask_for_path) {
             (Some(path), false) => path.clone(),
             _ => {
@@ -190,7 +196,7 @@ impl SpacegenApp {
                     .set_file_name("sky.spacegen")
                     .save_file()
                 else {
-                    return;
+                    return false;
                 };
                 path
             }
@@ -201,8 +207,63 @@ impl SpacegenApp {
                 self.status = format!("Saved {}.", path.display());
                 self.saved_json = json;
                 self.path = Some(path);
+                true
             }
-            Err(error) => self.status = format!("Could not save {}: {error}", path.display()),
+            Err(error) => {
+                self.status = format!("Could not save {}: {error}", path.display());
+                false
+            }
+        }
+    }
+
+    /// Runs `action` now, or asks Save / Discard / Cancel first when there are unsaved changes.
+    fn attempt(&mut self, action: Action, ctx: &egui::Context) {
+        if let Some(action) = self.unsaved.request(action, self.is_dirty()) {
+            self.run(action, ctx);
+        }
+    }
+
+    fn run(&mut self, action: Action, ctx: &egui::Context) {
+        match action {
+            Action::New => self.new_project(),
+            Action::Open => self.open_project(),
+            Action::Close => {
+                self.close_confirmed = true;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+        }
+    }
+
+    fn unsaved_dialog(&mut self, ctx: &egui::Context) {
+        if self.unsaved.pending().is_none() {
+            return;
+        }
+        let mut choice = None;
+        egui::Window::new("Unsaved changes")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ctx, |ui| {
+                ui.label("This project has changes that are not saved.");
+                ui.horizontal(|ui| {
+                    if ui.button("Save").clicked() {
+                        choice = Some(Choice::Save);
+                    }
+                    if ui.button("Discard").clicked() {
+                        choice = Some(Choice::Discard);
+                    }
+                    if ui.button("Cancel").clicked() {
+                        choice = Some(Choice::Cancel);
+                    }
+                });
+            });
+        if let Some(choice) = choice {
+            let mut unsaved = std::mem::take(&mut self.unsaved);
+            let action = unsaved.resolve(choice, || self.save_project(false));
+            self.unsaved = unsaved;
+            if let Some(action) = action {
+                self.run(action, ctx);
+            }
         }
     }
 
@@ -311,13 +372,13 @@ impl SpacegenApp {
 
     // ---- panels --------------------------------------------------------------
 
-    fn project_bar(&mut self, ui: &mut egui::Ui) {
+    fn project_bar(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         ui.horizontal_wrapped(|ui| {
             if ui.button("New").clicked() {
-                self.new_project();
+                self.attempt(Action::New, ctx);
             }
             if ui.button("Open...").clicked() {
-                self.open_project();
+                self.attempt(Action::Open, ctx);
             }
             if ui.button("Save").clicked() {
                 self.save_project(false);
@@ -713,6 +774,12 @@ impl eframe::App for SpacegenApp {
         let ctx = ui.ctx().clone();
         self.poll_export();
         self.handle_shortcuts(&ctx);
+        if ctx.input(|i| i.viewport().close_requested()) && !self.close_confirmed && self.is_dirty()
+        {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.attempt(Action::Close, &ctx);
+        }
+        self.unsaved_dialog(&ctx);
 
         let title = format!(
             "{}{} - SpaceGen",
@@ -732,7 +799,7 @@ impl eframe::App for SpacegenApp {
             .resizable(true)
             .show(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
-                    self.project_bar(ui);
+                    self.project_bar(ui, &ctx);
                     ui.separator();
                     self.seed_controls(ui);
                     ui.separator();
