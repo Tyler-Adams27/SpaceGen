@@ -192,3 +192,32 @@ The user said: "from here on, you will have agency… just get me a MVP. Documen
 - **No window crash.** If the export thread ends without a result (a panic in a driver, say) the UI says so and unlocks Export instead of staying stuck. If the window cannot open at all (no GPU or driver), `main` shows a message dialog with the likely cause. The app's remaining `expect` is the embedded icon, which a test already decodes.
 - **Not done:** the Preview losing its device mid-session (egui/wgpu handle or panic); a pre-flight memory estimate before a big export.
 - **Tests:** `export.rs` for no `.part` files after success, an earlier file surviving a failed export (mutation-checked: writing straight to the final name fails it), `existing_outputs`, `user_message` per I/O kind and exporting into a path that is a file; `lib.rs` for the render error kinds. The overwrite dialog, the status text and the startup dialog are GUI glue and were not triggered by hand.
+
+## Preview performance (issue #18)
+
+- **Measured** with `cargo run --release -p spacegen-render --example bench_preview` (new): one sky pass at Preview size, submit to GPU-idle, median of 20 frames, `Bgra8UnormSrgb` target, N Layers of one kind (same settings, defaults). Windows 11, DirectX 12. Times in milliseconds:
+
+  | | 1 Layer | 8 Layers | 16 Layers |
+  |---|---|---|---|
+  | **NVIDIA RTX 5070 Ti** (discrete), 1080p star fields | 0.3 | 1.7 | 3.4 |
+  | 1080p nebulae | 0.4 | 3.0 | 6.0 |
+  | 1080p galaxy bands | 0.6 | 4.1 | 8.2 |
+  | 1080p suns | 0.2 | 0.8 | 1.6 |
+  | 4K star fields | 0.9 | 6.5 | 13.1 |
+  | 4K nebulae | 1.5 | 12.1 | 24.1 |
+  | 4K galaxy bands | 2.0 | 16.4 | 32.7 |
+  | 4K suns | 0.5 | 3.2 | 6.1 |
+  | **AMD Radeon Graphics** (integrated), 1080p star fields | 9.7 | 73 | 146 |
+  | 1080p nebulae | 26.8 | 209 | 419 |
+  | 1080p galaxy bands | 39.8 | 314 | 648 |
+  | 1080p suns | 3.6 | 26 | 52 |
+  | 4K star fields | 35.7 | 273 | 543 |
+  | 4K nebulae | 106 | 836 | 1673 |
+  | 4K galaxy bands | 158 | 1253 | (GPU reset) |
+
+  Cost is linear in Layers and in pixels. The discrete GPU manages even 16 galaxy bands at 4K at about 30 frames a second. The integrated GPU does not: 8 star fields at 1080p are 14 frames a second, 16 nebulae at 1080p about 2, and 16 galaxy bands at 4K ran past Windows' two-second GPU timeout and reset the device (the 0.00 ms rows at the end of the raw run).
+- **So the Preview adapts** (the issue's "if needed"). `QualityGovernor` (`quality.rs`) picks a scale from 0.25 to 1.0 of the Preview's width and height from the measured frame time while the user is interacting: cost follows pixel count, so the scale that hits the 33 ms target is the current scale times the square root of target over frame time. It shrinks as soon as a frame is slower than the target and grows back only when a frame took under 70 % of the target (and then to 90 % of the size that would exactly hit it), so it does not flip back and forth. Alternative: a fixed low resolution while dragging, rejected because the discrete GPU needs none and the slow case varies by 100 times between machines. A fast machine never leaves full size.
+- **Sharp when you pause.** After 0.4 s without input (pointer movement, a button down, scroll, key) the next frame is full size; a repaint is requested so that frame happens even when nothing else changes. On the integrated GPU that one frame can still take hundreds of milliseconds; it does not repeat unless input resumes.
+- **How it draws.** `ScaledSky` (`scaled_sky.rs`) renders the sky into an offscreen texture of the reduced size (in the Preview's `prepare` step) and stretches it over the panel with a linear-filtered blit; the sky's `pixel_angle` uses the reduced pixel size so stars keep their on-screen size. Tested headlessly on the software adapter: a half-size sky stretched to the target differs from the direct render by a mean of 0.0017 (of 1.0); a vertically flipped blit scores 0.043, which fails the 0.01 limit (checked).
+- **Not verified by eye:** the reduced Preview was not looked at in the running window (the app was launched, not driven), and the governor's constants (33 ms, 0.7, 0.9, 0.4 s) are first guesses without a slow machine to tune them on. The measured frame time is egui's time between frames, which on a 60 Hz display includes waiting for the display, so a frame that really takes 5 ms reads as 16 ms; that is still under the grow threshold.
+- **The 16-Layer cap is shown.** The Layer list says "N of 16 visible Layers"; at 16 the Add and Copy buttons are disabled with a hover explanation, and over 16 (more Layers shown, or a file that has them) a warning says how many of the top visible Layers are not drawn. Only visible Layers count, matching the renderer. `layer_cap::cap_status` is unit-tested.

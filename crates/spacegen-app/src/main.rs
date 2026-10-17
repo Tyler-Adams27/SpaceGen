@@ -1,7 +1,10 @@
 mod app;
 mod icon;
+mod layer_cap;
 mod preview;
 mod preview_view;
+mod quality;
+mod scaled_sky;
 mod seed_source;
 mod settings;
 mod unsaved;
