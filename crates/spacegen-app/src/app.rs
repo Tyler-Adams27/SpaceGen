@@ -13,6 +13,7 @@ use spacegen_render::{
 
 use crate::preview::{PreviewCallback, PreviewResources};
 use crate::seed_source::fresh_seed;
+use crate::settings::{Settings, settings_path as default_settings_path};
 use crate::unsaved::{Action, Choice, Guard};
 
 const FACE_SIZES: [u32; 5] = [512, 1024, 2048, 4096, 8192];
@@ -32,38 +33,6 @@ struct ExportJob {
     total: usize,
 }
 
-struct ExportSettings {
-    name: String,
-    folder: Option<PathBuf>,
-    face_size: u32,
-    format: ImageFormat,
-    convention: EngineConvention,
-    faces: bool,
-    panorama: bool,
-    hdri: bool,
-    hdri_format: HdriFormat,
-    png_bit_depth: PngBitDepth,
-    jpeg_quality: u8,
-}
-
-impl Default for ExportSettings {
-    fn default() -> Self {
-        ExportSettings {
-            name: "skybox".to_string(),
-            folder: None,
-            face_size: 2048,
-            format: ImageFormat::Png,
-            convention: EngineConvention::Unity,
-            faces: true,
-            panorama: true,
-            hdri: true,
-            hdri_format: HdriFormat::OpenExr,
-            png_bit_depth: PngBitDepth::Sixteen,
-            jpeg_quality: 95,
-        }
-    }
-}
-
 pub struct SpacegenApp {
     history: History,
     selected: Option<LayerId>,
@@ -73,7 +42,12 @@ pub struct SpacegenApp {
     yaw: f32,
     pitch: f32,
     fov: f32,
-    export: ExportSettings,
+    settings: Settings,
+    settings_path: Option<PathBuf>,
+    /// A recent file picked from the menu, waiting for the unsaved-changes answer.
+    recent_to_open: Option<PathBuf>,
+    /// The settings JSON as last written, so unchanged settings are not rewritten.
+    persisted_settings: String,
     job: Option<ExportJob>,
     status: String,
     shown_title: String,
@@ -126,6 +100,11 @@ impl SpacegenApp {
         }
         let project = starter_project();
         let selected = project.layers().first().map(|l| l.id());
+        let settings_path = default_settings_path();
+        let settings = settings_path
+            .as_deref()
+            .map(Settings::load)
+            .unwrap_or_default();
         SpacegenApp {
             saved_json: project.to_json(),
             history: History::new(project),
@@ -134,7 +113,10 @@ impl SpacegenApp {
             yaw: 0.4,
             pitch: 0.15,
             fov: DEFAULT_FOV,
-            export: ExportSettings::default(),
+            persisted_settings: settings.to_json(),
+            settings,
+            settings_path,
+            recent_to_open: None,
             job: None,
             status: "Drag the sky to look around, scroll to zoom.".to_string(),
             shown_title: String::new(),
@@ -168,11 +150,17 @@ impl SpacegenApp {
     }
 
     fn open_project(&mut self) {
-        let Some(path) = rfd::FileDialog::new()
-            .add_filter("SpaceGen project", &["spacegen"])
-            .pick_file()
-        else {
-            return;
+        let path = match self.recent_to_open.take() {
+            Some(path) => path,
+            None => {
+                let Some(path) = rfd::FileDialog::new()
+                    .add_filter("SpaceGen project", &["spacegen"])
+                    .pick_file()
+                else {
+                    return;
+                };
+                path
+            }
         };
         match std::fs::read_to_string(&path)
             .map_err(|e| e.to_string())
@@ -180,9 +168,27 @@ impl SpacegenApp {
         {
             Ok(project) => {
                 self.status = format!("Opened {}.", path.display());
+                self.settings.remember_recent(&path);
                 self.replace_project(project, Some(path));
+                self.persist_settings();
             }
-            Err(error) => self.status = format!("Could not open {}: {error}", path.display()),
+            Err(error) => {
+                self.status = format!("Could not open {}: {error}", path.display());
+                self.settings.forget_recent(&path);
+                self.persist_settings();
+            }
+        }
+    }
+
+    /// Writes the settings file when something in it changed since the last write.
+    fn persist_settings(&mut self) {
+        let Some(path) = &self.settings_path else {
+            return;
+        };
+        let json = self.settings.to_json();
+        if json != self.persisted_settings {
+            let _ = self.settings.save(path);
+            self.persisted_settings = json;
         }
     }
 
@@ -206,7 +212,9 @@ impl SpacegenApp {
             Ok(()) => {
                 self.status = format!("Saved {}.", path.display());
                 self.saved_json = json;
+                self.settings.remember_recent(&path);
                 self.path = Some(path);
+                self.persist_settings();
                 true
             }
             Err(error) => {
@@ -246,6 +254,25 @@ impl SpacegenApp {
             .show(ctx, |ui| {
                 ui.label("This project has changes that are not saved.");
                 ui.horizontal(|ui| {
+                    ui.add_enabled_ui(!self.settings.recent.is_empty(), |ui| {
+                        ui.menu_button("Recent", |ui| {
+                            for path in self.settings.recent.clone() {
+                                let name = path.file_name().map_or_else(
+                                    || path.display().to_string(),
+                                    |n| n.to_string_lossy().into_owned(),
+                                );
+                                if ui
+                                    .button(name)
+                                    .on_hover_text(path.display().to_string())
+                                    .clicked()
+                                {
+                                    self.recent_to_open = Some(path);
+                                    self.attempt(Action::Open, ctx);
+                                    ui.close();
+                                }
+                            }
+                        });
+                    });
                     if ui.button("Save").clicked() {
                         choice = Some(Choice::Save);
                     }
@@ -263,6 +290,8 @@ impl SpacegenApp {
             self.unsaved = unsaved;
             if let Some(action) = action {
                 self.run(action, ctx);
+            } else {
+                self.recent_to_open = None;
             }
         }
     }
@@ -270,21 +299,22 @@ impl SpacegenApp {
     // ---- export ------------------------------------------------------------
 
     fn start_export(&mut self, ctx: &egui::Context) {
-        let Some(folder) = self.export.folder.clone() else {
+        self.persist_settings();
+        let Some(folder) = self.settings.export.folder.clone() else {
             return;
         };
         let project = self.history.project().clone();
         let options = ExportOptions {
-            name: self.export.name.clone(),
-            face_size: self.export.face_size,
-            format: self.export.format,
-            convention: self.export.convention,
-            faces: self.export.faces,
-            panorama: self.export.panorama,
-            hdri: self.export.hdri,
-            hdri_format: self.export.hdri_format,
-            png_bit_depth: self.export.png_bit_depth,
-            jpeg_quality: self.export.jpeg_quality,
+            name: self.settings.export.name.clone(),
+            face_size: self.settings.export.face_size,
+            format: self.settings.export.format,
+            convention: self.settings.export.convention,
+            faces: self.settings.export.faces,
+            panorama: self.settings.export.panorama,
+            hdri: self.settings.export.hdri,
+            hdri_format: self.settings.export.hdri_format,
+            png_bit_depth: self.settings.export.png_bit_depth,
+            jpeg_quality: self.settings.export.jpeg_quality,
         };
         let (sender, receiver) = mpsc::channel();
         let cancel = CancelToken::new();
@@ -343,9 +373,11 @@ impl SpacegenApp {
 
     fn can_export(&self) -> bool {
         self.job.is_none()
-            && self.export.folder.is_some()
-            && !self.export.name.trim().is_empty()
-            && (self.export.faces || self.export.panorama || self.export.hdri)
+            && self.settings.export.folder.is_some()
+            && !self.settings.export.name.trim().is_empty()
+            && (self.settings.export.faces
+                || self.settings.export.panorama
+                || self.settings.export.hdri)
     }
 
     // ---- keyboard ------------------------------------------------------------
@@ -378,6 +410,7 @@ impl SpacegenApp {
                 self.attempt(Action::New, ctx);
             }
             if ui.button("Open...").clicked() {
+                self.recent_to_open = None;
                 self.attempt(Action::Open, ctx);
             }
             if ui.button("Save").clicked() {
@@ -649,25 +682,25 @@ impl SpacegenApp {
         ui.heading("Export");
         ui.horizontal(|ui| {
             ui.label("Name");
-            ui.text_edit_singleline(&mut self.export.name);
+            ui.text_edit_singleline(&mut self.settings.export.name);
         });
         ui.horizontal(|ui| {
             if ui.button("Folder...").clicked()
                 && let Some(folder) = rfd::FileDialog::new().pick_folder()
             {
-                self.export.folder = Some(folder);
+                self.settings.export.folder = Some(folder);
             }
-            match &self.export.folder {
+            match &self.settings.export.folder {
                 Some(folder) => ui.label(folder.display().to_string()),
                 None => ui.label("choose where to save"),
             };
         });
         egui::ComboBox::from_label("Face size")
-            .selected_text(format!("{0} x {0}", self.export.face_size))
+            .selected_text(format!("{0} x {0}", self.settings.export.face_size))
             .show_ui(ui, |ui| {
                 for size in FACE_SIZES {
                     ui.selectable_value(
-                        &mut self.export.face_size,
+                        &mut self.settings.export.face_size,
                         size,
                         format!("{size} x {size}"),
                     );
@@ -675,25 +708,32 @@ impl SpacegenApp {
             });
         ui.horizontal(|ui| {
             ui.label("Format");
-            ui.selectable_value(&mut self.export.format, ImageFormat::Png, "PNG");
-            ui.selectable_value(&mut self.export.format, ImageFormat::Jpeg, "JPEG");
+            ui.selectable_value(&mut self.settings.export.format, ImageFormat::Png, "PNG");
+            ui.selectable_value(&mut self.settings.export.format, ImageFormat::Jpeg, "JPEG");
         });
-        if self.export.format == ImageFormat::Png {
+        if self.settings.export.format == ImageFormat::Png {
             ui.horizontal(|ui| {
                 ui.label("PNG depth");
                 ui.selectable_value(
-                    &mut self.export.png_bit_depth,
+                    &mut self.settings.export.png_bit_depth,
                     PngBitDepth::Sixteen,
                     "16-bit",
                 );
-                ui.selectable_value(&mut self.export.png_bit_depth, PngBitDepth::Eight, "8-bit");
+                ui.selectable_value(
+                    &mut self.settings.export.png_bit_depth,
+                    PngBitDepth::Eight,
+                    "8-bit",
+                );
             });
         }
-        if self.export.format == ImageFormat::Jpeg {
-            ui.add(egui::Slider::new(&mut self.export.jpeg_quality, 50..=100).text("JPEG quality"));
+        if self.settings.export.format == ImageFormat::Jpeg {
+            ui.add(
+                egui::Slider::new(&mut self.settings.export.jpeg_quality, 50..=100)
+                    .text("JPEG quality"),
+            );
         }
         egui::ComboBox::from_label("Face names for")
-            .selected_text(convention_name(self.export.convention))
+            .selected_text(convention_name(self.settings.export.convention))
             .show_ui(ui, |ui| {
                 for convention in [
                     EngineConvention::Unity,
@@ -701,22 +741,30 @@ impl SpacegenApp {
                     EngineConvention::Godot,
                 ] {
                     ui.selectable_value(
-                        &mut self.export.convention,
+                        &mut self.settings.export.convention,
                         convention,
                         convention_name(convention),
                     );
                 }
             });
-        ui.checkbox(&mut self.export.faces, "Six cube faces");
+        ui.checkbox(&mut self.settings.export.faces, "Six cube faces");
         ui.checkbox(
-            &mut self.export.panorama,
+            &mut self.settings.export.panorama,
             "Panorama image (equirectangular)",
         );
         ui.horizontal(|ui| {
-            ui.checkbox(&mut self.export.hdri, "HDRI");
-            ui.add_enabled_ui(self.export.hdri, |ui| {
-                ui.selectable_value(&mut self.export.hdri_format, HdriFormat::OpenExr, ".exr");
-                ui.selectable_value(&mut self.export.hdri_format, HdriFormat::Radiance, ".hdr");
+            ui.checkbox(&mut self.settings.export.hdri, "HDRI");
+            ui.add_enabled_ui(self.settings.export.hdri, |ui| {
+                ui.selectable_value(
+                    &mut self.settings.export.hdri_format,
+                    HdriFormat::OpenExr,
+                    ".exr",
+                );
+                ui.selectable_value(
+                    &mut self.settings.export.hdri_format,
+                    HdriFormat::Radiance,
+                    ".hdr",
+                );
             });
         });
 
@@ -780,6 +828,7 @@ impl eframe::App for SpacegenApp {
             self.attempt(Action::Close, &ctx);
         }
         self.unsaved_dialog(&ctx);
+        self.persist_settings();
 
         let title = format!(
             "{}{} - SpaceGen",

@@ -2997,6 +2997,8 @@ version = "0.1.0"
 dependencies = [
  "eframe",
  "rfd",
+ "serde",
+ "serde_json",
  "spacegen-core",
  "spacegen-render",
 ]

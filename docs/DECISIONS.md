@@ -149,3 +149,12 @@ The user said: "from here on, you will have agency… just get me a MVP. Documen
 - **"Unsaved" is the existing `*` rule** (project JSON differs from the last saved JSON), so an edit undone back to the saved state is not unsaved.
 - **Not covered:** an export running when the window closes is not asked about (it is stopped with the process and may leave partial files; cancel it first).
 - **Tests:** `Guard` is unit-tested through `request`, `resolve` and `pending`, with three mutations checked (Discard dropping the action, Save ignoring the result, the prompt not holding the action). The dialog and the close hook are GUI glue: only the launch was checked, not the clicks.
+
+## Remember recent files and export settings (issue #13)
+
+- **One JSON file**, `settings.json`, in `SpaceGen/` under the platform config directory (`%APPDATA%` on Windows, `~/Library/Application Support` on macOS, `$XDG_CONFIG_HOME` or `~/.config` elsewhere), found from environment variables rather than the `dirs` crate to avoid a dependency for three lines. It holds the recent files (newest first, no duplicates, at most 8) and the whole `ExportSettings` (which moved to `settings.rs` and gained serde derives; the four export enums in the core crate gained them too). `#[serde(default)]` means a file with missing fields keeps the defaults for those.
+- **A missing or corrupt file gives the defaults**, never an error. A failed write is ignored silently (settings are a convenience).
+- **When it is written:** each frame the app compares the serialized settings with what it last wrote and writes only on a difference, so changes land within a frame and nothing depends on a clean shutdown. Alternative: eframe's `save` hook, rejected because it needs eframe's `persistence` feature (not enabled), and an `on_exit` write, rejected because it is lost on a crash or kill.
+- **Recent menu:** a "Recent" menu in the project bar, disabled when empty. Choosing one goes through the same unsaved-changes prompt as Open. A recent file that fails to open is dropped from the list.
+- **Not remembered:** window size and position, camera, and the Project itself (the app still starts on the starter Project). The issue title said "window state"; the Done-when list did not, so it was left out.
+- **Tests:** `settings.rs` covers the round trip, missing, corrupt and partial files, and the recent list rules; the dedupe and cap were mutation-checked. The Recent menu and the per-frame write are GUI glue and were only checked by launching.

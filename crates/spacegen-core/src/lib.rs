@@ -660,7 +660,7 @@ pub enum Face {
     NegativeZ,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ImageFormat {
     Png,
     Jpeg,
@@ -668,20 +668,20 @@ pub enum ImageFormat {
 
 /// Bits per channel of exported PNG files. 16-bit avoids banding in dark gradients; 8-bit is for
 /// engines and importers that mishandle 16-bit PNGs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum PngBitDepth {
     Sixteen,
     Eight,
 }
 
 /// File format of the floating-point HDRI.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum HdriFormat {
     OpenExr,
     Radiance,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum EngineConvention {
     Unity,
     Unreal,
