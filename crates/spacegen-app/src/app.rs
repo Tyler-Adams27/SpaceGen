@@ -357,8 +357,16 @@ impl SpacegenApp {
             .collect();
         let count = rows.len();
         ui.label("Layers (top first)");
+        // Drag-and-drop reorder: the handle starts a drag carrying the Layer id; the row under
+        // the pointer on release is the new index. Up/Down stay as the keyboard fallback.
+        let mut row_rects: Vec<(usize, egui::Rect)> = Vec::with_capacity(count);
         for (index, &(id, kind, visible)) in rows.iter().enumerate().rev() {
-            ui.horizontal(|ui| {
+            let row = ui.horizontal(|ui| {
+                let handle = ui
+                    .add(egui::Label::new("::").sense(egui::Sense::drag()))
+                    .on_hover_cursor(egui::CursorIcon::Grab)
+                    .on_hover_text("Drag to reorder");
+                handle.dnd_set_drag_payload(id);
                 let mut shown = visible;
                 if ui
                     .checkbox(&mut shown, "")
@@ -403,6 +411,28 @@ impl SpacegenApp {
                     }
                 }
             });
+            row_rects.push((index, row.response.rect));
+        }
+        let pointer = ui.ctx().pointer_interact_pos();
+        let hovered = pointer.and_then(|p| row_rects.iter().find(|(_, r)| r.contains(p)));
+        if let (Some(&(target, rect)), Some(dragged)) =
+            (hovered, egui::DragAndDrop::payload::<LayerId>(ui.ctx()))
+        {
+            let from = rows.iter().position(|r| r.0 == *dragged).unwrap_or(target);
+            let y = if target > from {
+                rect.top()
+            } else {
+                rect.bottom()
+            };
+            ui.painter().hline(
+                rect.x_range(),
+                y,
+                egui::Stroke::new(2.0, ui.visuals().selection.bg_fill),
+            );
+            if ui.input(|i| i.pointer.any_released()) {
+                let result = self.history.move_layer(*dragged, target);
+                self.report(result);
+            }
         }
         ui.horizontal(|ui| {
             if ui.button("Add star field").clicked() {
