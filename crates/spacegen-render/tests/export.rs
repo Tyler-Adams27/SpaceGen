@@ -3,7 +3,10 @@ use std::path::PathBuf;
 use spacegen_core::{
     EngineConvention, HdriFormat, ImageFormat, LayerKind, PngBitDepth, Project, Seed,
 };
-use spacegen_render::{ExportOptions, Renderer, export_skybox, linear_to_srgb, panorama_width};
+use spacegen_render::{
+    CancelToken, ExportError, ExportOptions, Renderer, export_skybox, linear_to_srgb,
+    panorama_width,
+};
 
 fn temp_dir(label: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("spacegen-test-{label}-{}", std::process::id()));
@@ -274,4 +277,55 @@ fn png_faces_and_panorama_are_written_at_the_chosen_bit_depth() {
             assert_eq!(color, expected, "{} at {depth:?}", path.display());
         }
     }
+}
+
+#[test]
+fn cancelling_mid_export_stops_with_cancelled_and_leaves_no_files_behind() {
+    let token = CancelToken::new();
+    let Ok(renderer) = Renderer::software().map(|r| r.with_cancel_token(token.clone())) else {
+        eprintln!("SKIPPED: no software adapter");
+        return;
+    };
+    let dir = temp_dir("cancel");
+    let mut calls = 0;
+
+    let result = export_skybox(
+        &renderer,
+        &star_project(),
+        &dir,
+        &faces_only(8),
+        |done, _| {
+            calls += 1;
+            if done == 2 {
+                token.cancel();
+            }
+        },
+    );
+
+    assert!(matches!(result, Err(ExportError::Cancelled)), "{result:?}");
+    assert!(
+        calls < 7,
+        "export kept going after the cancel ({calls} reports)"
+    );
+    let left: Vec<_> = std::fs::read_dir(&dir).unwrap().collect();
+    assert!(left.is_empty(), "files left behind: {left:?}");
+}
+
+#[test]
+fn cancelling_stops_between_bands_within_one_image() {
+    let token = CancelToken::new();
+    let renderer = match Renderer::software() {
+        Ok(r) => r.with_max_band_rows(1).with_cancel_token(token.clone()),
+        Err(_) => {
+            eprintln!("SKIPPED: no software adapter");
+            return;
+        }
+    };
+    token.cancel();
+
+    let error = renderer
+        .render_face(&star_project(), spacegen_core::Face::PositiveZ, 8)
+        .unwrap_err();
+
+    assert!(error.is_cancelled());
 }

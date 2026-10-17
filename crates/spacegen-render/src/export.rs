@@ -59,6 +59,8 @@ pub struct ExportOptions {
 
 #[derive(Debug)]
 pub enum ExportError {
+    /// The export was cancelled; every file it had written was removed.
+    Cancelled,
     Render(RenderError),
     Io(std::io::Error),
     Image(image::ImageError),
@@ -67,6 +69,7 @@ pub enum ExportError {
 impl std::fmt::Display for ExportError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            ExportError::Cancelled => write!(f, "export cancelled"),
             ExportError::Render(error) => write!(f, "rendering failed: {error}"),
             ExportError::Io(error) => write!(f, "could not write a file: {error}"),
             ExportError::Image(error) => write!(f, "could not encode an image: {error}"),
@@ -78,6 +81,9 @@ impl std::error::Error for ExportError {}
 
 impl From<RenderError> for ExportError {
     fn from(error: RenderError) -> Self {
+        if error.is_cancelled() {
+            return ExportError::Cancelled;
+        }
         ExportError::Render(error)
     }
 }
@@ -96,21 +102,51 @@ impl From<image::ImageError> for ExportError {
 
 /// Renders the Skybox and writes the requested images into `dir`, returning the files written.
 /// `progress(done, total)` is called before each image and once at the end.
+///
+/// If the Renderer's [`CancelToken`](crate::CancelToken) is cancelled, the export stops between
+/// images (and between bands within one), removes the files it had written and returns
+/// [`ExportError::Cancelled`].
 pub fn export_skybox(
     renderer: &Renderer,
     project: &Project,
     dir: &Path,
     options: &ExportOptions,
-    mut progress: impl FnMut(usize, usize),
+    progress: impl FnMut(usize, usize),
 ) -> Result<Vec<PathBuf>, ExportError> {
+    let mut written = Vec::new();
+    let result = write_skybox(renderer, project, dir, options, progress, &mut written);
+    if matches!(result, Err(ExportError::Cancelled)) {
+        for path in &written {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+    result.map(|()| written)
+}
+
+fn write_skybox(
+    renderer: &Renderer,
+    project: &Project,
+    dir: &Path,
+    options: &ExportOptions,
+    mut progress: impl FnMut(usize, usize),
+    written: &mut Vec<PathBuf>,
+) -> Result<(), ExportError> {
+    let cancel = renderer.cancel_token();
+    let check = || {
+        if cancel.is_cancelled() {
+            Err(ExportError::Cancelled)
+        } else {
+            Ok(())
+        }
+    };
     std::fs::create_dir_all(dir)?;
     let total = if options.faces { FACES.len() } else { 0 }
         + usize::from(options.panorama)
         + usize::from(options.hdri);
-    let mut written = Vec::new();
 
     if options.faces {
         for face in FACES {
+            check()?;
             progress(written.len(), total);
             let image = renderer.render_face(project, face, options.face_size)?;
             let path = dir.join(options.convention.face_file_name(
@@ -123,6 +159,7 @@ pub fn export_skybox(
         }
     }
     if options.panorama || options.hdri {
+        check()?;
         progress(written.len(), total);
         let image = renderer.render_equirectangular(project, panorama_width(options.face_size))?;
         if options.panorama {
@@ -135,6 +172,7 @@ pub fn export_skybox(
             written.push(path);
         }
         if options.hdri {
+            check()?;
             progress(written.len(), total);
             let path = dir.join(format!(
                 "{}.{}",
@@ -149,7 +187,7 @@ pub fn export_skybox(
         }
     }
     progress(written.len(), total);
-    Ok(written)
+    Ok(())
 }
 
 fn save_exr(image: &SkyImage, path: &Path) -> Result<(), ExportError> {

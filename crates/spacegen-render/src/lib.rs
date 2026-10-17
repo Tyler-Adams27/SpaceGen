@@ -44,11 +44,53 @@ impl SkyImage {
 }
 
 #[derive(Debug)]
-pub struct RenderError(String);
+pub struct RenderError {
+    message: String,
+    cancelled: bool,
+}
+
+impl RenderError {
+    fn failed(message: String) -> RenderError {
+        RenderError {
+            message,
+            cancelled: false,
+        }
+    }
+
+    fn cancelled() -> RenderError {
+        RenderError {
+            message: "cancelled".to_string(),
+            cancelled: true,
+        }
+    }
+
+    /// True when rendering stopped because the Renderer's [`CancelToken`] was cancelled.
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled
+    }
+}
 
 impl std::fmt::Display for RenderError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
+        f.write_str(&self.message)
+    }
+}
+
+/// A shared flag that asks a running render or export to stop. Clones share the flag.
+#[derive(Debug, Clone, Default)]
+pub struct CancelToken(std::sync::Arc<std::sync::atomic::AtomicBool>);
+
+impl CancelToken {
+    pub fn new() -> CancelToken {
+        CancelToken::default()
+    }
+
+    pub fn cancel(&self) {
+        self.0.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.0.load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 
@@ -59,6 +101,7 @@ pub struct Renderer {
     queue: wgpu::Queue,
     pipeline: SkyPipeline,
     max_band_rows: Option<u32>,
+    cancel: CancelToken,
 }
 
 impl Renderer {
@@ -79,16 +122,19 @@ impl Renderer {
             power_preference: wgpu::PowerPreference::HighPerformance,
             ..Default::default()
         }))
-        .map_err(|error| RenderError(format!("no suitable adapter: {error}")))?;
+        .map_err(|error| RenderError::failed(format!("no suitable adapter: {error}")))?;
         let (device, queue) =
             pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))
-                .map_err(|error| RenderError(format!("could not open the adapter: {error}")))?;
+                .map_err(|error| {
+                    RenderError::failed(format!("could not open the adapter: {error}"))
+                })?;
         let pipeline = SkyPipeline::new(&device, FORMAT);
         Ok(Renderer {
             device,
             queue,
             pipeline,
             max_band_rows: None,
+            cancel: CancelToken::new(),
         })
     }
 
@@ -97,6 +143,17 @@ impl Renderer {
     pub fn with_max_band_rows(mut self, rows: u32) -> Renderer {
         self.max_band_rows = Some(rows.max(1));
         self
+    }
+
+    /// Makes renders and exports on this Renderer stop, between bands and between images, once
+    /// `token` is cancelled.
+    pub fn with_cancel_token(mut self, token: CancelToken) -> Renderer {
+        self.cancel = token;
+        self
+    }
+
+    pub fn cancel_token(&self) -> &CancelToken {
+        &self.cancel
     }
 
     /// Renders one cubemap Face, `size` pixels square.
@@ -142,6 +199,9 @@ impl Renderer {
         let mut pixels = Vec::with_capacity((width * height) as usize);
         let mut start = 0;
         while start < height {
+            if self.cancel.is_cancelled() {
+                return Err(RenderError::cancelled());
+            }
             let rows = rows_per_band.min(height - start);
             let band = uniforms.with_band(
                 start as f32 / height as f32,
@@ -241,15 +301,15 @@ impl Renderer {
         });
         self.device
             .poll(wgpu::PollType::wait_indefinitely())
-            .map_err(|error| RenderError(format!("GPU wait failed: {error}")))?;
+            .map_err(|error| RenderError::failed(format!("GPU wait failed: {error}")))?;
         receiver
             .recv()
-            .map_err(|error| RenderError(format!("GPU readback lost: {error}")))?
-            .map_err(|error| RenderError(format!("GPU readback failed: {error}")))?;
+            .map_err(|error| RenderError::failed(format!("GPU readback lost: {error}")))?
+            .map_err(|error| RenderError::failed(format!("GPU readback failed: {error}")))?;
 
         let mapped = slice
             .get_mapped_range()
-            .map_err(|error| RenderError(format!("GPU readback unavailable: {error}")))?;
+            .map_err(|error| RenderError::failed(format!("GPU readback unavailable: {error}")))?;
         for row in mapped.chunks(padded_row_bytes as usize) {
             let floats: &[f32] = bytemuck::cast_slice(&row[..row_bytes as usize]);
             pixels.extend_from_slice(floats.as_chunks::<4>().0);
