@@ -3,7 +3,9 @@ mod export;
 mod sky;
 
 pub use basis::{FaceBasis, camera_basis, face_basis};
-pub use export::{ExportError, ExportOptions, export_skybox, linear_to_srgb, panorama_width};
+pub use export::{
+    ExportError, ExportOptions, export_skybox, hdri_width, linear_to_srgb, panorama_width,
+};
 pub use sky::{MAX_LAYERS, Projection, SkyPipeline, SkyUniforms};
 
 use spacegen_core::{Face, Project};
@@ -101,6 +103,7 @@ pub struct Renderer {
     queue: wgpu::Queue,
     pipeline: SkyPipeline,
     max_band_rows: Option<u32>,
+    max_tile_width: Option<u32>,
     cancel: CancelToken,
 }
 
@@ -134,6 +137,7 @@ impl Renderer {
             queue,
             pipeline,
             max_band_rows: None,
+            max_tile_width: None,
             cancel: CancelToken::new(),
         })
     }
@@ -142,6 +146,13 @@ impl Renderer {
     /// pass reads back about 64 MiB, which keeps 8K Faces inside the GPU's buffer limits.
     pub fn with_max_band_rows(mut self, rows: u32) -> Renderer {
         self.max_band_rows = Some(rows.max(1));
+        self
+    }
+
+    /// Draws images in column tiles at most this wide. By default the tile width is the GPU's
+    /// largest texture, so only an image wider than that is tiled.
+    pub fn with_max_tile_width(mut self, width: u32) -> Renderer {
+        self.max_tile_width = Some(width.max(1));
         self
     }
 
@@ -249,7 +260,11 @@ impl Renderer {
             .max_band_rows
             .unwrap_or_else(|| (BAND_BUDGET_BYTES / row_bytes.max(1)).max(1))
             .clamp(1, height.max(1));
-        let mut pixels = Vec::with_capacity((width * rows_per_band) as usize);
+        let tile_width = self
+            .max_tile_width
+            .unwrap_or_else(|| self.device.limits().max_texture_dimension_2d)
+            .clamp(1, width.max(1));
+        let mut pixels = vec![[0.0; 4]; (width * rows_per_band) as usize];
         let mut start = 0;
         while start < height {
             if self.cancel.is_cancelled() {
@@ -260,21 +275,38 @@ impl Renderer {
                 start as f32 / height as f32,
                 (start + rows) as f32 / height as f32,
             );
-            pixels.clear();
-            self.render_band(&band, width, rows, &mut pixels)?;
-            sink(start, &pixels)?;
+            // A band of full-width rows is drawn in tiles no wider than the GPU can make a texture.
+            let mut x = 0;
+            while x < width {
+                let columns = tile_width.min(width - x);
+                let tile =
+                    band.with_columns(x as f32 / width as f32, (x + columns) as f32 / width as f32);
+                self.render_tile(
+                    &tile,
+                    columns,
+                    rows,
+                    &mut pixels,
+                    width as usize,
+                    x as usize,
+                )?;
+                x += columns;
+            }
+            sink(start, &pixels[..(width * rows) as usize])?;
             start += rows;
         }
         Ok(())
     }
 
-    /// Renders one band of rows and appends its pixels.
-    fn render_band(
+    /// Renders one tile and copies its pixels into `out`, a band of rows `stride` pixels wide,
+    /// starting at column `x0`.
+    fn render_tile(
         &self,
         uniforms: &SkyUniforms,
         width: u32,
         height: u32,
-        pixels: &mut Vec<[f32; 4]>,
+        out: &mut [[f32; 4]],
+        stride: usize,
+        x0: usize,
     ) -> Result<(), RenderError> {
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("sky"),
@@ -361,9 +393,10 @@ impl Renderer {
         let mapped = slice
             .get_mapped_range()
             .map_err(|error| RenderError::failed(format!("GPU readback unavailable: {error}")))?;
-        for row in mapped.chunks(padded_row_bytes as usize) {
+        for (y, row) in mapped.chunks(padded_row_bytes as usize).enumerate() {
             let floats: &[f32] = bytemuck::cast_slice(&row[..row_bytes as usize]);
-            pixels.extend_from_slice(floats.as_chunks::<4>().0);
+            let start = y * stride + x0;
+            out[start..start + width as usize].copy_from_slice(floats.as_chunks::<4>().0);
         }
         drop(mapped);
         readback.unmap();

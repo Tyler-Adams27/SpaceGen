@@ -16,13 +16,19 @@ const FACES: [Face; 6] = [
     Face::NegativeZ,
 ];
 
-/// The widest panorama the MVP exports; wider would need more GPU memory than is safe to assume.
-const MAX_PANORAMA_WIDTH: u32 = 8192;
+/// The widest HDRI exported: its float pixels (16 bytes each) are held in memory whole, so 8192 by
+/// 4096 is about 512 MiB. The PNG and JPEG panorama is streamed and has no such limit.
+const MAX_HDRI_WIDTH: u32 = 8192;
 
-/// Width of the exported panorama: four Faces wide (matching the Faces' pixel density at the
-/// equator), capped at 8192 pixels.
+/// Width of the exported PNG or JPEG panorama: four Faces wide, matching the Faces' pixel density
+/// at the equator. Not capped: an 8192 Face gives a 32768 by 16384 panorama.
 pub fn panorama_width(face_size: u32) -> u32 {
-    face_size.saturating_mul(4).min(MAX_PANORAMA_WIDTH)
+    face_size.saturating_mul(4)
+}
+
+/// Width of the exported HDRI: the panorama width, capped at 8192 pixels (see `MAX_HDRI_WIDTH`).
+pub fn hdri_width(face_size: u32) -> u32 {
+    panorama_width(face_size).min(MAX_HDRI_WIDTH)
 }
 
 /// Encodes linear light (clamped to 0..1) with the sRGB transfer curve.
@@ -161,50 +167,36 @@ fn write_skybox(
             written.push(path);
         }
     }
-    if options.panorama || options.hdri {
+    if options.panorama {
         check()?;
         progress(written.len(), total);
+        // Streamed, so its width is not limited by memory.
         let width = panorama_width(options.face_size);
-        if !options.hdri {
-            // Only the panorama image is wanted: stream it, never holding the whole float image.
-            let path = dir.join(format!(
-                "{}_panorama.{}",
-                options.name,
-                extension(options.format)
-            ));
-            stream_image(&path, width, width / 2, options, |rows| {
-                renderer.render_equirectangular_rows(project, width, |_, band| rows.write(band))
-            })?;
-            written.push(path);
-            progress(written.len(), total);
-            return Ok(());
+        let path = dir.join(format!(
+            "{}_panorama.{}",
+            options.name,
+            extension(options.format)
+        ));
+        stream_image(&path, width, width / 2, options, |rows| {
+            renderer.render_equirectangular_rows(project, width, |_, band| rows.write(band))
+        })?;
+        written.push(path);
+    }
+    if options.hdri {
+        check()?;
+        progress(written.len(), total);
+        // The HDRI keeps float pixels, so its whole image is held in memory: capped width.
+        let image = renderer.render_equirectangular(project, hdri_width(options.face_size))?;
+        let path = dir.join(format!(
+            "{}.{}",
+            options.name,
+            hdri_extension(options.hdri_format)
+        ));
+        match options.hdri_format {
+            HdriFormat::OpenExr => save_exr(&image, &path)?,
+            HdriFormat::Radiance => save_radiance(&image, &path)?,
         }
-        // The HDRI keeps the float pixels, so the whole image is rendered once and the panorama
-        // (if wanted) is saved from it.
-        let image = renderer.render_equirectangular(project, width)?;
-        if options.panorama {
-            let path = dir.join(format!(
-                "{}_panorama.{}",
-                options.name,
-                extension(options.format)
-            ));
-            save_image(&image, &path, options)?;
-            written.push(path);
-        }
-        if options.hdri {
-            check()?;
-            progress(written.len(), total);
-            let path = dir.join(format!(
-                "{}.{}",
-                options.name,
-                hdri_extension(options.hdri_format)
-            ));
-            match options.hdri_format {
-                HdriFormat::OpenExr => save_exr(&image, &path)?,
-                HdriFormat::Radiance => save_radiance(&image, &path)?,
-            }
-            written.push(path);
-        }
+        written.push(path);
     }
     progress(written.len(), total);
     Ok(())
@@ -385,47 +377,4 @@ fn extension(format: ImageFormat) -> &'static str {
         ImageFormat::Png => "png",
         ImageFormat::Jpeg => "jpg",
     }
-}
-
-fn save_image(image: &SkyImage, path: &Path, options: &ExportOptions) -> Result<(), ExportError> {
-    match options.format {
-        ImageFormat::Png => match options.png_bit_depth {
-            PngBitDepth::Sixteen => {
-                let mut buffer = image::ImageBuffer::<image::Rgb<u16>, Vec<u16>>::new(
-                    image.width(),
-                    image.height(),
-                );
-                for (target, source) in buffer.pixels_mut().zip(image.pixels()) {
-                    *target = image::Rgb(std::array::from_fn(|c| {
-                        (linear_to_srgb(source[c]) * 65535.0).round() as u16
-                    }));
-                }
-                buffer.save(path)?;
-            }
-            PngBitDepth::Eight => {
-                let mut buffer = image::RgbImage::new(image.width(), image.height());
-                for (target, source) in buffer.pixels_mut().zip(image.pixels()) {
-                    *target = image::Rgb(std::array::from_fn(|c| {
-                        (linear_to_srgb(source[c]) * 255.0).round() as u8
-                    }));
-                }
-                buffer.save(path)?;
-            }
-        },
-        ImageFormat::Jpeg => {
-            let mut buffer = image::RgbImage::new(image.width(), image.height());
-            for (target, source) in buffer.pixels_mut().zip(image.pixels()) {
-                *target = image::Rgb(std::array::from_fn(|c| {
-                    (linear_to_srgb(source[c]) * 255.0).round() as u8
-                }));
-            }
-            let file = std::io::BufWriter::new(std::fs::File::create(path)?);
-            let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(
-                file,
-                options.jpeg_quality.clamp(1, 100),
-            );
-            buffer.write_with_encoder(encoder)?;
-        }
-    }
-    Ok(())
 }

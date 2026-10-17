@@ -133,7 +133,7 @@ impl SkyUniforms {
             down: pad(basis.down),
             info: [count as u32, mode, 0, 0],
             pixel: [pixel_angle, 0.0, 0.0, 0.0],
-            band: [0.0, 1.0, 0.0, 0.0],
+            band: [0.0, 1.0, 0.0, 1.0],
             layers,
         }
     }
@@ -142,7 +142,13 @@ impl SkyUniforms {
 impl SkyUniforms {
     /// Restricts the pass to the rows between start and end, as fractions of the image height.
     pub fn with_band(mut self, start: f32, end: f32) -> SkyUniforms {
-        self.band = [start, end, 0.0, 0.0];
+        self.band = [start, end, self.band[2], self.band[3]];
+        self
+    }
+
+    /// Restricts the pass to the columns between start and end, as fractions of the image width.
+    pub fn with_columns(mut self, start: f32, end: f32) -> SkyUniforms {
+        self.band = [self.band[0], self.band[1], start, end];
         self
     }
 

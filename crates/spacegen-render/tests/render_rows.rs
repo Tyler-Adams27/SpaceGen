@@ -60,3 +60,34 @@ fn an_error_from_the_sink_stops_the_render_and_comes_back_unchanged() {
     assert!(matches!(result, Err(TestError::Sink)), "{result:?}");
     assert_eq!(calls, 1);
 }
+
+#[test]
+fn a_panorama_rendered_in_column_tiles_matches_a_single_pass() {
+    let (Ok(tiled), Ok(single)) = (
+        Renderer::software().map(|r| r.with_max_tile_width(11).with_max_band_rows(5)),
+        Renderer::software(),
+    ) else {
+        eprintln!("SKIPPED: no software adapter");
+        return;
+    };
+
+    // 64 wide in tiles of 11 is five full tiles and a narrow one of 9: the edges fall mid-sky.
+    let a = tiled.render_equirectangular(&project(), 64).unwrap();
+    let b = single.render_equirectangular(&project(), 64).unwrap();
+
+    assert_eq!((a.width(), a.height()), (64, 32));
+    // Tile and single-pass renders may differ in the last bit on some GPUs (ADR 0001), so compare
+    // by mean difference; a tile drawn from the wrong part of the sky or shifted by even half a
+    // pixel is far above this.
+    let mean: f32 = a
+        .pixels()
+        .iter()
+        .zip(b.pixels())
+        .map(|(p, q)| (0..3).map(|c| (p[c] - q[c]).abs()).sum::<f32>() / 3.0)
+        .sum::<f32>()
+        / a.pixels().len() as f32;
+    assert!(
+        mean < 0.002,
+        "tiled and single-pass differ by {mean} on average"
+    );
+}

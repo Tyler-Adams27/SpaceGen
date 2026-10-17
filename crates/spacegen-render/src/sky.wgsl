@@ -51,7 +51,7 @@ struct Globals {
     down: vec4<f32>,
     info: vec4<u32>,     // layer count, mode (0 = basis, 1 = equirectangular)
     pixel: vec4<f32>,    // angular size of one pixel in radians
-    band: vec4<f32>,     // the slice of the image this pass covers: v start, v end
+    band: vec4<f32>,     // the slice of the image this pass covers: v start, v end, u start, u end
     layers: array<Layer, 16>,
 }
 
@@ -271,7 +271,7 @@ fn sun_layer(d: vec3<f32>, layer: Layer) -> vec3<f32> {
 
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    let uv = vec2<f32>(in.uv.x, mix(g.band.x, g.band.y, in.uv.y));
+    let uv = vec2<f32>(mix(g.band.z, g.band.w, in.uv.x), mix(g.band.x, g.band.y, in.uv.y));
     let d = view_direction(uv);
     var color = vec3<f32>(0.0);
     let count = min(g.info.x, MAX_LAYERS);
