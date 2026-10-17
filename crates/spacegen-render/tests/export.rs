@@ -4,8 +4,8 @@ use spacegen_core::{
     EngineConvention, HdriFormat, ImageFormat, LayerKind, PngBitDepth, Project, Seed,
 };
 use spacegen_render::{
-    CancelToken, ExportError, ExportOptions, Renderer, export_skybox, hdri_width, linear_to_srgb,
-    panorama_width,
+    CancelToken, ExportError, ExportOptions, Renderer, existing_outputs, export_skybox, hdri_width,
+    linear_to_srgb, panorama_width,
 };
 
 fn temp_dir(label: &str) -> PathBuf {
@@ -428,4 +428,130 @@ fn streamed_files_decode_to_exactly_the_in_memory_render_for_every_format() {
             );
         }
     }
+}
+
+fn file_names(dir: &std::path::Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+
+#[test]
+fn a_finished_export_leaves_only_the_finished_files_no_temporary_names() {
+    let Ok(renderer) = Renderer::software() else {
+        eprintln!("SKIPPED: no software adapter");
+        return;
+    };
+    let dir = temp_dir("no-part-files");
+    let options = ExportOptions {
+        panorama: true,
+        hdri: true,
+        ..faces_only(8)
+    };
+
+    let written = export_skybox(&renderer, &star_project(), &dir, &options, |_, _| {}).unwrap();
+
+    assert_eq!(written.len(), 8);
+    assert_eq!(file_names(&dir).len(), 8, "{:?}", file_names(&dir));
+    assert!(file_names(&dir).iter().all(|n| !n.contains(".part")));
+}
+
+#[test]
+fn a_failed_export_leaves_an_existing_file_of_the_same_name_untouched() {
+    let token = CancelToken::new();
+    let Ok(renderer) = Renderer::software().map(|r| r.with_cancel_token(token.clone())) else {
+        eprintln!("SKIPPED: no software adapter");
+        return;
+    };
+    let dir = temp_dir("keep-old");
+    let old = dir.join("sky_panorama.png");
+    std::fs::write(&old, "the previous export").unwrap();
+    let options = ExportOptions {
+        faces: false,
+        panorama: true,
+        ..faces_only(8)
+    };
+
+    // Cancelled just as the panorama starts, after its file has been opened for writing.
+    let result = export_skybox(&renderer, &star_project(), &dir, &options, |_, _| {
+        token.cancel()
+    });
+
+    assert!(matches!(result, Err(ExportError::Cancelled)));
+    assert_eq!(
+        std::fs::read_to_string(&old).unwrap(),
+        "the previous export"
+    );
+    assert_eq!(file_names(&dir), ["sky_panorama.png"]);
+}
+
+#[test]
+fn existing_outputs_lists_exactly_the_files_an_export_would_replace() {
+    let dir = temp_dir("existing");
+    let options = ExportOptions {
+        panorama: true,
+        hdri: true,
+        ..faces_only(8)
+    };
+    assert!(existing_outputs(&dir, &options).is_empty());
+    std::fs::write(dir.join("sky_Up.png"), "x").unwrap();
+    std::fs::write(dir.join("sky_panorama.png"), "x").unwrap();
+    std::fs::write(dir.join("sky.exr"), "x").unwrap();
+    std::fs::write(dir.join("other.png"), "x").unwrap();
+
+    let mut names: Vec<String> = existing_outputs(&dir, &options)
+        .iter()
+        .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+
+    assert_eq!(names, ["sky.exr", "sky_Up.png", "sky_panorama.png"]);
+    // A file the export would not write (faces off) is not a conflict.
+    let panorama_only = ExportOptions {
+        faces: false,
+        hdri: false,
+        ..options
+    };
+    assert_eq!(existing_outputs(&dir, &panorama_only).len(), 1);
+}
+
+#[test]
+fn export_failures_are_explained_in_plain_language_with_something_to_try() {
+    use std::io::{Error, ErrorKind};
+    let message = |kind| ExportError::Io(Error::from(kind)).user_message();
+
+    assert!(message(ErrorKind::PermissionDenied).contains("not allowed to write"));
+    assert!(message(ErrorKind::NotFound).contains("folder"));
+    assert!(message(ErrorKind::StorageFull).contains("full"));
+    assert!(message(ErrorKind::OutOfMemory).contains("memory"));
+    assert_eq!(ExportError::Cancelled.user_message(), "Export cancelled.");
+    // Anything else still reads as a sentence, with the system's own words kept for support.
+    let other = message(ErrorKind::Other);
+    assert!(other.starts_with("Could not write"), "{other}");
+}
+
+#[test]
+fn exporting_into_a_path_that_is_a_file_is_an_error_not_a_panic() {
+    let Ok(renderer) = Renderer::software() else {
+        eprintln!("SKIPPED: no software adapter");
+        return;
+    };
+    let dir = temp_dir("dir-is-file");
+    let not_a_folder = dir.join("file.txt");
+    std::fs::write(&not_a_folder, "x").unwrap();
+
+    let result = export_skybox(
+        &renderer,
+        &star_project(),
+        &not_a_folder,
+        &faces_only(8),
+        |_, _| {},
+    );
+
+    let error = result.unwrap_err();
+    assert!(matches!(error, ExportError::Io(_)));
+    assert!(!error.user_message().is_empty());
 }
