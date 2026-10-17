@@ -4,7 +4,8 @@ mod sky;
 
 pub use basis::{FaceBasis, camera_basis, face_basis};
 pub use export::{
-    ExportError, ExportOptions, export_skybox, hdri_width, linear_to_srgb, panorama_width,
+    ExportError, ExportOptions, existing_outputs, export_skybox, hdri_width, linear_to_srgb,
+    panorama_width,
 };
 pub use sky::{MAX_LAYERS, Projection, SkyPipeline, SkyUniforms};
 
@@ -45,30 +46,52 @@ impl SkyImage {
     }
 }
 
+/// What went wrong while rendering, as far as the user can act on it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RenderErrorKind {
+    /// No graphics adapter could be opened.
+    NoGpu,
+    /// The GPU stopped answering: a driver reset, a removed card, a timeout.
+    DeviceLost,
+    OutOfMemory,
+    /// Stopped on request through the [`CancelToken`].
+    Cancelled,
+    Other,
+}
+
 #[derive(Debug)]
 pub struct RenderError {
     message: String,
-    cancelled: bool,
+    kind: RenderErrorKind,
 }
 
 impl RenderError {
-    fn failed(message: String) -> RenderError {
-        RenderError {
-            message,
-            cancelled: false,
-        }
+    fn of_kind(kind: RenderErrorKind, message: String) -> RenderError {
+        RenderError { message, kind }
     }
 
     fn cancelled() -> RenderError {
-        RenderError {
-            message: "cancelled".to_string(),
-            cancelled: true,
-        }
+        RenderError::of_kind(RenderErrorKind::Cancelled, "cancelled".to_string())
+    }
+
+    pub fn kind(&self) -> RenderErrorKind {
+        self.kind
     }
 
     /// True when rendering stopped because the Renderer's [`CancelToken`] was cancelled.
     pub fn is_cancelled(&self) -> bool {
-        self.cancelled
+        self.kind == RenderErrorKind::Cancelled
+    }
+
+    /// A sentence for the user saying what happened and what to try.
+    pub fn user_message(&self) -> String {
+        match self.kind {
+            RenderErrorKind::NoGpu => "SpaceGen could not find a usable graphics card (GPU). It needs one that supports Vulkan, DirectX 12 or Metal. Update your graphics driver and try again.".to_string(),
+            RenderErrorKind::DeviceLost => "The graphics card stopped responding (a driver reset or a removed card). Close other graphics-heavy programs, update your graphics driver and try again.".to_string(),
+            RenderErrorKind::OutOfMemory => "The graphics card ran out of memory. Choose a smaller face size and try again.".to_string(),
+            RenderErrorKind::Cancelled => "Export cancelled.".to_string(),
+            RenderErrorKind::Other => format!("Rendering failed: {}", self.message),
+        }
     }
 }
 
@@ -125,11 +148,19 @@ impl Renderer {
             power_preference: wgpu::PowerPreference::HighPerformance,
             ..Default::default()
         }))
-        .map_err(|error| RenderError::failed(format!("no suitable adapter: {error}")))?;
+        .map_err(|error| {
+            RenderError::of_kind(
+                RenderErrorKind::NoGpu,
+                format!("no suitable adapter: {error}"),
+            )
+        })?;
         let (device, queue) =
             pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))
                 .map_err(|error| {
-                    RenderError::failed(format!("could not open the adapter: {error}"))
+                    RenderError::of_kind(
+                        RenderErrorKind::NoGpu,
+                        format!("could not open the adapter: {error}"),
+                    )
                 })?;
         let pipeline = SkyPipeline::new(&device, FORMAT);
         Ok(Renderer {
@@ -308,6 +339,27 @@ impl Renderer {
         stride: usize,
         x0: usize,
     ) -> Result<(), RenderError> {
+        // An allocation the GPU cannot satisfy is reported through the error scope, not as a Result.
+        let scope = self.device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
+        let result = self.render_tile_unchecked(uniforms, width, height, out, stride, x0);
+        if let Some(error) = pollster::block_on(scope.pop()) {
+            return Err(RenderError::of_kind(
+                RenderErrorKind::OutOfMemory,
+                error.to_string(),
+            ));
+        }
+        result
+    }
+
+    fn render_tile_unchecked(
+        &self,
+        uniforms: &SkyUniforms,
+        width: u32,
+        height: u32,
+        out: &mut [[f32; 4]],
+        stride: usize,
+        x0: usize,
+    ) -> Result<(), RenderError> {
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("sky"),
             size: wgpu::Extent3d {
@@ -384,15 +436,33 @@ impl Renderer {
         });
         self.device
             .poll(wgpu::PollType::wait_indefinitely())
-            .map_err(|error| RenderError::failed(format!("GPU wait failed: {error}")))?;
+            .map_err(|error| {
+                RenderError::of_kind(
+                    RenderErrorKind::DeviceLost,
+                    format!("GPU wait failed: {error}"),
+                )
+            })?;
         receiver
             .recv()
-            .map_err(|error| RenderError::failed(format!("GPU readback lost: {error}")))?
-            .map_err(|error| RenderError::failed(format!("GPU readback failed: {error}")))?;
+            .map_err(|error| {
+                RenderError::of_kind(
+                    RenderErrorKind::DeviceLost,
+                    format!("GPU readback lost: {error}"),
+                )
+            })?
+            .map_err(|error| {
+                RenderError::of_kind(
+                    RenderErrorKind::DeviceLost,
+                    format!("GPU readback failed: {error}"),
+                )
+            })?;
 
-        let mapped = slice
-            .get_mapped_range()
-            .map_err(|error| RenderError::failed(format!("GPU readback unavailable: {error}")))?;
+        let mapped = slice.get_mapped_range().map_err(|error| {
+            RenderError::of_kind(
+                RenderErrorKind::DeviceLost,
+                format!("GPU readback unavailable: {error}"),
+            )
+        })?;
         for (y, row) in mapped.chunks(padded_row_bytes as usize).enumerate() {
             let floats: &[f32] = bytemuck::cast_slice(&row[..row_bytes as usize]);
             let start = y * stride + x0;
@@ -401,5 +471,37 @@ impl Renderer {
         drop(mapped);
         readback.unmap();
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn message(kind: RenderErrorKind) -> String {
+        RenderError::of_kind(kind, "internal detail".to_string()).user_message()
+    }
+
+    #[test]
+    fn every_kind_of_render_failure_has_a_plain_language_message() {
+        assert!(message(RenderErrorKind::NoGpu).contains("graphics card"));
+        assert!(message(RenderErrorKind::NoGpu).contains("driver"));
+        assert!(message(RenderErrorKind::DeviceLost).contains("stopped responding"));
+        assert!(message(RenderErrorKind::OutOfMemory).contains("smaller face size"));
+        assert_eq!(message(RenderErrorKind::Cancelled), "Export cancelled.");
+    }
+
+    #[test]
+    fn an_unrecognised_failure_keeps_the_internal_detail_for_support() {
+        let text = message(RenderErrorKind::Other);
+
+        assert!(text.starts_with("Rendering failed"), "{text}");
+        assert!(text.contains("internal detail"), "{text}");
+    }
+
+    #[test]
+    fn only_a_cancelled_error_reports_as_cancelled() {
+        assert!(RenderError::of_kind(RenderErrorKind::Cancelled, String::new()).is_cancelled());
+        assert!(!RenderError::of_kind(RenderErrorKind::NoGpu, String::new()).is_cancelled());
     }
 }

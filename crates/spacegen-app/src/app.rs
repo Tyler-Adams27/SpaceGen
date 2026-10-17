@@ -8,7 +8,7 @@ use spacegen_core::{
 };
 use spacegen_render::{
     CancelToken, ExportError, ExportOptions, Projection, Renderer, SkyUniforms, camera_basis,
-    export_skybox,
+    existing_outputs, export_skybox,
 };
 
 use crate::preview::{PreviewCallback, PreviewResources};
@@ -47,6 +47,8 @@ pub struct SpacegenApp {
     settings_path: Option<PathBuf>,
     /// A recent file picked from the menu, waiting for the unsaved-changes answer.
     recent_to_open: Option<PathBuf>,
+    /// Files an export would replace, waiting for the user to confirm.
+    overwrite_pending: Option<Vec<PathBuf>>,
     preview_mode: PreviewMode,
     /// The settings JSON as last written, so unchanged settings are not rewritten.
     persisted_settings: String,
@@ -119,6 +121,7 @@ impl SpacegenApp {
             settings,
             settings_path,
             recent_to_open: None,
+            overwrite_pending: None,
             preview_mode: PreviewMode::FreeLook,
             job: None,
             status: "Drag the sky to look around, scroll to zoom.".to_string(),
@@ -301,13 +304,60 @@ impl SpacegenApp {
 
     // ---- export ------------------------------------------------------------
 
-    fn start_export(&mut self, ctx: &egui::Context) {
-        self.persist_settings();
+    /// Starts the export, or first asks before replacing files that are already in the folder.
+    fn request_export(&mut self, ctx: &egui::Context) {
         let Some(folder) = self.settings.export.folder.clone() else {
             return;
         };
-        let project = self.history.project().clone();
-        let options = ExportOptions {
+        let existing = existing_outputs(&folder, &self.export_options());
+        if existing.is_empty() {
+            self.start_export(ctx);
+        } else {
+            self.overwrite_pending = Some(existing);
+        }
+    }
+
+    fn overwrite_dialog(&mut self, ctx: &egui::Context) {
+        let Some(files) = &self.overwrite_pending else {
+            return;
+        };
+        let names: Vec<String> = files
+            .iter()
+            .filter_map(|p| p.file_name())
+            .map(|n| n.to_string_lossy().into_owned())
+            .collect();
+        let mut replace = false;
+        let mut cancel = false;
+        egui::Window::new("Replace existing files?")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ctx, |ui| {
+                ui.label(format!(
+                    "The export folder already has {} of the files this export writes:",
+                    names.len()
+                ));
+                for name in names.iter().take(8) {
+                    ui.monospace(name);
+                }
+                if names.len() > 8 {
+                    ui.label(format!("... and {} more", names.len() - 8));
+                }
+                ui.horizontal(|ui| {
+                    replace = ui.button("Replace").clicked();
+                    cancel = ui.button("Cancel").clicked();
+                });
+            });
+        if replace {
+            self.overwrite_pending = None;
+            self.start_export(ctx);
+        } else if cancel {
+            self.overwrite_pending = None;
+        }
+    }
+
+    fn export_options(&self) -> ExportOptions {
+        ExportOptions {
             name: self.settings.export.name.clone(),
             face_size: self.settings.export.face_size,
             format: self.settings.export.format,
@@ -318,7 +368,16 @@ impl SpacegenApp {
             hdri_format: self.settings.export.hdri_format,
             png_bit_depth: self.settings.export.png_bit_depth,
             jpeg_quality: self.settings.export.jpeg_quality,
+        }
+    }
+
+    fn start_export(&mut self, ctx: &egui::Context) {
+        self.persist_settings();
+        let Some(folder) = self.settings.export.folder.clone() else {
+            return;
         };
+        let project = self.history.project().clone();
+        let options = self.export_options();
         let (sender, receiver) = mpsc::channel();
         let cancel = CancelToken::new();
         let thread_cancel = cancel.clone();
@@ -330,7 +389,7 @@ impl SpacegenApp {
             };
             let renderer = match Renderer::gpu().map(|r| r.with_cancel_token(thread_cancel)) {
                 Ok(renderer) => renderer,
-                Err(error) => return send(ExportMessage::Failed(error.to_string())),
+                Err(error) => return send(ExportMessage::Failed(error.user_message())),
             };
             let result = export_skybox(&renderer, &project, &folder, &options, |done, total| {
                 send(ExportMessage::Progress(done, total))
@@ -338,7 +397,7 @@ impl SpacegenApp {
             send(match result {
                 Ok(files) => ExportMessage::Finished(files.len()),
                 Err(ExportError::Cancelled) => ExportMessage::Cancelled,
-                Err(error) => ExportMessage::Failed(error.to_string()),
+                Err(error) => ExportMessage::Failed(error.user_message()),
             });
         });
         self.job = Some(ExportJob {
@@ -355,7 +414,16 @@ impl SpacegenApp {
             return;
         };
         let mut finished = None;
-        while let Ok(message) = job.receiver.try_recv() {
+        let mut stopped = false;
+        loop {
+            let message = match job.receiver.try_recv() {
+                Ok(message) => message,
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    stopped = true;
+                    break;
+                }
+            };
             match message {
                 ExportMessage::Progress(done, total) => {
                     job.done = done;
@@ -364,9 +432,16 @@ impl SpacegenApp {
                 ExportMessage::Finished(count) => {
                     finished = Some(format!("Exported {count} files."))
                 }
-                ExportMessage::Failed(error) => finished = Some(format!("Export failed: {error}")),
+                ExportMessage::Failed(error) => finished = Some(error),
                 ExportMessage::Cancelled => finished = Some("Export cancelled".to_string()),
             }
+        }
+        if finished.is_none() && stopped {
+            // The export thread ended without a result: it crashed, for example in the GPU driver.
+            finished = Some(
+                "The export stopped unexpectedly. Try a smaller face size; if it keeps happening, update your graphics driver."
+                    .to_string(),
+            );
         }
         if let Some(message) = finished {
             self.status = message;
@@ -775,7 +850,7 @@ impl SpacegenApp {
             .add_enabled(self.can_export(), egui::Button::new("Export"))
             .clicked()
         {
-            self.start_export(ctx);
+            self.request_export(ctx);
         }
         if let Some(job) = &self.job {
             ui.add(
@@ -854,6 +929,7 @@ impl eframe::App for SpacegenApp {
             self.attempt(Action::Close, &ctx);
         }
         self.unsaved_dialog(&ctx);
+        self.overwrite_dialog(&ctx);
         self.persist_settings();
 
         let title = format!(

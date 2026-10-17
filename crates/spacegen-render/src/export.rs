@@ -86,6 +86,28 @@ impl std::fmt::Display for ExportError {
 
 impl std::error::Error for ExportError {}
 
+impl ExportError {
+    /// A sentence for the user saying what went wrong and what to try. The `Display` text stays
+    /// technical, for logs and support.
+    pub fn user_message(&self) -> String {
+        use std::io::ErrorKind;
+        match self {
+            ExportError::Cancelled => "Export cancelled.".to_string(),
+            ExportError::Render(error) => error.user_message(),
+            ExportError::Io(error) => match error.kind() {
+                ErrorKind::PermissionDenied => "SpaceGen is not allowed to write to that folder. Choose another folder (for example inside Documents) and export again.".to_string(),
+                ErrorKind::NotFound => "The export folder could not be found or created. Check that the drive is connected, then choose the folder again.".to_string(),
+                ErrorKind::AlreadyExists | ErrorKind::NotADirectory => "The export location is not a folder. Choose a folder and export again.".to_string(),
+                ErrorKind::StorageFull => "The disk is full. Free some space or choose another folder, then export again.".to_string(),
+                ErrorKind::ReadOnlyFilesystem => "That folder is read-only. Choose another folder and export again.".to_string(),
+                ErrorKind::OutOfMemory => "The computer ran out of memory while exporting. Choose a smaller face size and try again.".to_string(),
+                _ => format!("Could not write the export files: {error}"),
+            },
+            ExportError::Image(error) => format!("Could not encode an image: {error}"),
+        }
+    }
+}
+
 impl From<RenderError> for ExportError {
     fn from(error: RenderError) -> Self {
         if error.is_cancelled() {
@@ -155,11 +177,7 @@ fn write_skybox(
         for face in FACES {
             check()?;
             progress(written.len(), total);
-            let path = dir.join(options.convention.face_file_name(
-                &options.name,
-                face,
-                options.format,
-            ));
+            let path = face_path(dir, options, face);
             let size = options.face_size;
             stream_image(&path, size, size, options, |rows| {
                 renderer.render_face_rows(project, face, size, |_, band| rows.write(band))
@@ -172,11 +190,7 @@ fn write_skybox(
         progress(written.len(), total);
         // Streamed, so its width is not limited by memory.
         let width = panorama_width(options.face_size);
-        let path = dir.join(format!(
-            "{}_panorama.{}",
-            options.name,
-            extension(options.format)
-        ));
+        let path = panorama_path(dir, options);
         stream_image(&path, width, width / 2, options, |rows| {
             renderer.render_equirectangular_rows(project, width, |_, band| rows.write(band))
         })?;
@@ -187,15 +201,11 @@ fn write_skybox(
         progress(written.len(), total);
         // The HDRI keeps float pixels, so its whole image is held in memory: capped width.
         let image = renderer.render_equirectangular(project, hdri_width(options.face_size))?;
-        let path = dir.join(format!(
-            "{}.{}",
-            options.name,
-            hdri_extension(options.hdri_format)
-        ));
-        match options.hdri_format {
-            HdriFormat::OpenExr => save_exr(&image, &path)?,
-            HdriFormat::Radiance => save_radiance(&image, &path)?,
-        }
+        let path = hdri_path(dir, options);
+        write_via_temp(&path, |temp| match options.hdri_format {
+            HdriFormat::OpenExr => save_exr(&image, temp),
+            HdriFormat::Radiance => save_radiance(&image, temp),
+        })?;
         written.push(path);
     }
     progress(written.len(), total);
@@ -303,8 +313,13 @@ impl RowWriter {
     fn finish(self) -> Result<(), ExportError> {
         match self.sink {
             RowSink::Png { stream, .. } => stream.finish().map_err(png_error)?,
-            RowSink::Jpeg { rgb, file, quality } => {
-                let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(file, quality);
+            RowSink::Jpeg {
+                rgb,
+                mut file,
+                quality,
+            } => {
+                let encoder =
+                    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut file, quality);
                 image::ImageBuffer::<image::Rgb<u8>, Vec<u8>>::from_raw(
                     self.width,
                     self.height,
@@ -312,6 +327,7 @@ impl RowWriter {
                 )
                 .expect("every row was written")
                 .write_with_encoder(encoder)?;
+                file.flush()?;
             }
         }
         Ok(())
@@ -319,11 +335,15 @@ impl RowWriter {
 }
 
 fn png_error(error: png::EncodingError) -> ExportError {
-    ExportError::Io(std::io::Error::other(error))
+    match error {
+        png::EncodingError::IoError(error) => ExportError::Io(error),
+        other => ExportError::Io(std::io::Error::other(other)),
+    }
 }
 
-/// Renders an image straight into `path` through a [`RowWriter`]. Whatever goes wrong, including
-/// a cancel, the unfinished file is removed.
+/// Renders an image straight into `path` through a [`RowWriter`]. The bytes go to a temporary name
+/// next to `path` and are renamed over it only when complete, so a failed or cancelled export never
+/// leaves a corrupt image or damages an earlier file of the same name.
 fn stream_image(
     path: &Path,
     width: u32,
@@ -331,14 +351,73 @@ fn stream_image(
     options: &ExportOptions,
     render: impl FnOnce(&mut RowWriter) -> Result<(), ExportError>,
 ) -> Result<(), ExportError> {
-    let result = RowWriter::create(path, width, height, options).and_then(|mut rows| {
+    write_via_temp(path, |temp| {
+        let mut rows = RowWriter::create(temp, width, height, options)?;
         render(&mut rows)?;
         rows.finish()
-    });
+    })
+}
+
+/// Runs `write` against a temporary name beside `path`, then renames it over `path`. On any error
+/// the temporary file is removed and `path` is left as it was.
+fn write_via_temp(
+    path: &Path,
+    write: impl FnOnce(&Path) -> Result<(), ExportError>,
+) -> Result<(), ExportError> {
+    let temp = temp_path(path);
+    let result =
+        write(&temp).and_then(|()| std::fs::rename(&temp, path).map_err(ExportError::from));
     if result.is_err() {
-        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(&temp);
     }
     result
+}
+
+fn temp_path(path: &Path) -> PathBuf {
+    let mut name = path.file_name().unwrap_or_default().to_os_string();
+    name.push(".part");
+    path.with_file_name(name)
+}
+
+fn face_path(dir: &Path, options: &ExportOptions, face: Face) -> PathBuf {
+    dir.join(
+        options
+            .convention
+            .face_file_name(&options.name, face, options.format),
+    )
+}
+
+fn panorama_path(dir: &Path, options: &ExportOptions) -> PathBuf {
+    dir.join(format!(
+        "{}_panorama.{}",
+        options.name,
+        extension(options.format)
+    ))
+}
+
+fn hdri_path(dir: &Path, options: &ExportOptions) -> PathBuf {
+    dir.join(format!(
+        "{}.{}",
+        options.name,
+        hdri_extension(options.hdri_format)
+    ))
+}
+
+/// The files in `dir` that an export with these options would overwrite, so the caller can ask
+/// first.
+pub fn existing_outputs(dir: &Path, options: &ExportOptions) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    if options.faces {
+        paths.extend(FACES.iter().map(|face| face_path(dir, options, *face)));
+    }
+    if options.panorama {
+        paths.push(panorama_path(dir, options));
+    }
+    if options.hdri {
+        paths.push(hdri_path(dir, options));
+    }
+    paths.retain(|path| path.exists());
+    paths
 }
 
 fn save_exr(image: &SkyImage, path: &Path) -> Result<(), ExportError> {
@@ -346,7 +425,7 @@ fn save_exr(image: &SkyImage, path: &Path) -> Result<(), ExportError> {
     for (target, source) in buffer.pixels_mut().zip(image.pixels()) {
         *target = image::Rgba(*source);
     }
-    buffer.save(path)?;
+    buffer.save_with_format(path, image::ImageFormat::OpenExr)?;
     Ok(())
 }
 
@@ -356,12 +435,13 @@ fn save_radiance(image: &SkyImage, path: &Path) -> Result<(), ExportError> {
         .iter()
         .map(|p| image::Rgb([p[0], p[1], p[2]]))
         .collect();
-    let file = std::io::BufWriter::new(std::fs::File::create(path)?);
-    image::codecs::hdr::HdrEncoder::new(file).encode(
+    let mut file = std::io::BufWriter::new(std::fs::File::create(path)?);
+    image::codecs::hdr::HdrEncoder::new(&mut file).encode(
         &pixels,
         image.width() as usize,
         image.height() as usize,
     )?;
+    file.flush()?;
     Ok(())
 }
 
