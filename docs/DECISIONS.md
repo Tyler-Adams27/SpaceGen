@@ -128,3 +128,9 @@ The user said: "from here on, you will have agency… just get me a MVP. Documen
 - **The PNG is committed, not rendered at build time.** The logo uses SVG filters (noise, displacement, masks) that need a full renderer such as resvg; pulling one into the app's dependencies or a build script would add compile time and a failure point for a picture that rarely changes. Alternative: rasterise in `build.rs`, rejected for that reason. To regenerate: `npm i @resvg/resvg-js`, render `logo.svg` at 256 px width to `icon.png`. The `ray` filter uses an explicit `userSpaceOnUse` region because resvg panicked on a percentage region combined with `feDisplacementMap`.
 - **Not done: the Windows `.exe` file icon** (Explorer, installers). That needs an `.ico` embedded by a build script (for example `winres`). The window and taskbar show the icon at runtime; the file icon is a separate change.
 - **Tests:** the picture is 256x256 RGBA, with transparent rounded corners and an opaque middle (a solid-square mutation fails it).
+
+## Drag-to-reorder Layers (issue #10)
+
+- **A "::" handle on each Layer row** starts a drag carrying the `LayerId` (egui's drag-and-drop payload). The row under the pointer on release is the new index, passed to the existing undoable `History::move_layer`, so a drag is one undo step. A line marks the drop spot (above the row when moving up the stack, below it when moving down). Up and Down stay as the keyboard fallback.
+- **Dragging only from the handle**, not the whole row, so clicking a row to select it and the other row buttons are unaffected. Alternative: whole-row dragging with `dnd_drag_source`, rejected because it competes with selection clicks.
+- **Not unit-tested:** this is GUI glue over `move_layer`, which is already covered in `layer_editing.rs` and `history.rs`. Verified only that the app builds, passes clippy and launches; the drag gesture itself was not exercised (no egui test harness, see issue #20).
