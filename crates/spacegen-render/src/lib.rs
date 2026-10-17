@@ -5,7 +5,7 @@ mod sky;
 pub use basis::{FaceBasis, camera_basis, face_basis};
 pub use export::{
     ExportError, ExportOptions, existing_outputs, export_skybox, hdri_width, linear_to_srgb,
-    panorama_width,
+    panorama_width, panorama_width_for,
 };
 pub use sky::{MAX_LAYERS, Projection, SkyPipeline, SkyUniforms};
 

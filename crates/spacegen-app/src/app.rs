@@ -19,7 +19,7 @@ use crate::seed_source::fresh_seed;
 use crate::settings::{Settings, settings_path as default_settings_path};
 use crate::unsaved::{Action, Choice, Guard};
 
-const FACE_SIZES: [u32; 5] = [512, 1024, 2048, 4096, 8192];
+const FACE_SIZES: [u32; 6] = [512, 1024, 2048, 4096, 8192, 16384];
 const DEFAULT_FOV: f32 = 1.2;
 /// How long without input before the Preview is drawn at full size again.
 const IDLE_SECONDS: f64 = 0.4;
@@ -833,6 +833,13 @@ impl SpacegenApp {
                     );
                 }
             });
+        if self.settings.export.face_size >= 16384 {
+            ui.small(
+                "16384 Faces are 268 megapixels each and the panorama is 65536 x 32768 \
+                 (JPEG panoramas stop at 32768, the HDRI at 8192). Expect many minutes and \
+                 several GB of disk.",
+            );
+        }
         ui.horizontal(|ui| {
             ui.label("Format");
             ui.selectable_value(&mut self.settings.export.format, ImageFormat::Png, "PNG");

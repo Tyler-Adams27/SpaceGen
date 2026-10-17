@@ -555,3 +555,16 @@ fn exporting_into_a_path_that_is_a_file_is_an_error_not_a_panic() {
     assert!(matches!(error, ExportError::Io(_)));
     assert!(!error.user_message().is_empty());
 }
+
+#[test]
+fn a_jpeg_panorama_stays_within_what_jpeg_and_memory_allow() {
+    use spacegen_render::panorama_width_for;
+    // PNG panoramas are four Faces wide at any size; JPEG cannot be 65536 wide (its limit is
+    // 65535) and holds 8-bit RGB in memory, so it stops at the 8K Face's 32768.
+    assert_eq!(panorama_width_for(512, ImageFormat::Png), 2048);
+    assert_eq!(panorama_width_for(8192, ImageFormat::Png), 32768);
+    assert_eq!(panorama_width_for(16384, ImageFormat::Png), 65536);
+    assert_eq!(panorama_width_for(512, ImageFormat::Jpeg), 2048);
+    assert_eq!(panorama_width_for(8192, ImageFormat::Jpeg), 32768);
+    assert_eq!(panorama_width_for(16384, ImageFormat::Jpeg), 32768);
+}
