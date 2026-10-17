@@ -33,7 +33,7 @@ Use `--release`: the sky is drawn on the GPU, but unoptimized builds make the wi
   A `*` in the window title marks unsaved changes. *New*, *Open* and closing the window then ask **Save, Discard or Cancel** first; if the save is cancelled or fails, nothing is discarded.
 - **Export** writes into a folder you choose (it asks before replacing files that are already there, and writes each image under a temporary name first, so a failed or cancelled export never leaves a broken image or damages an earlier one):
   - six cube faces named for Unity, Unreal or Godot, as PNG (16-bit or 8-bit) or JPEG, 512 to 8192 pixels;
-  - one equirectangular panorama, four Faces wide (an 8192 Face gives 32768 x 16384; large panoramas are written row by row, so memory stays modest);
+  - one equirectangular panorama, four Faces wide (an 8192 Face gives 32768 x 16384 and a 16384 Face 65536 x 32768, though a JPEG panorama stops at 32768; large images are written row by row, so memory stays modest);
   - an HDRI for Blender and engines that take HDR skies: OpenEXR (`.exr`, floating point) or Radiance (`.hdr`). The HDRI is held in memory whole, so it is at most 8192 wide.
 
   Face pixels always use the Khronos/Vulkan cubemap orientation; only the file names change per engine.

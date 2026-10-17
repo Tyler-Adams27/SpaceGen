@@ -26,6 +26,20 @@ pub fn panorama_width(face_size: u32) -> u32 {
     face_size.saturating_mul(4)
 }
 
+/// The widest JPEG panorama: JPEG cannot be 65536 pixels wide (its limit is 65535) and the encoder
+/// holds 8-bit RGB in memory (about 1.6 GiB at 32768 x 16384), so it stops at an 8192 Face's width.
+const MAX_JPEG_PANORAMA_WIDTH: u32 = 32768;
+
+/// Width of the panorama file for this format: [`panorama_width`], except that a JPEG stops at
+/// 32768 pixels.
+pub fn panorama_width_for(face_size: u32, format: ImageFormat) -> u32 {
+    let width = panorama_width(face_size);
+    match format {
+        ImageFormat::Png => width,
+        ImageFormat::Jpeg => width.min(MAX_JPEG_PANORAMA_WIDTH),
+    }
+}
+
 /// Width of the exported HDRI: the panorama width, capped at 8192 pixels (see `MAX_HDRI_WIDTH`).
 pub fn hdri_width(face_size: u32) -> u32 {
     panorama_width(face_size).min(MAX_HDRI_WIDTH)
@@ -189,7 +203,7 @@ fn write_skybox(
         check()?;
         progress(written.len(), total);
         // Streamed, so its width is not limited by memory.
-        let width = panorama_width(options.face_size);
+        let width = panorama_width_for(options.face_size, options.format);
         let path = panorama_path(dir, options);
         stream_image(&path, width, width / 2, options, |rows| {
             renderer.render_equirectangular_rows(project, width, |_, band| rows.write(band))

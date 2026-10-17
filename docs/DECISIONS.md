@@ -228,3 +228,11 @@ The user said: "from here on, you will have agency… just get me a MVP. Documen
 - **Public API unchanged:** every public item is re-exported at the crate root under its old name, so no other crate and no test changed. Verified by building and running the whole workspace untouched.
 - **Visibility:** what other modules needed became `pub(crate)` (Layer's fields, `LayerSettings`, each settings `validate`, `Layer::recolor`, `ColorPicker`), and nothing is `pub` that was not before. `ColorPicker` got a `new` constructor rather than a public field.
 - **Cohesion over size:** `Project` stays one module with its edit methods (about 240 lines) rather than splitting edits from serialization, because both need its private fields and splitting would widen them.
+
+## 16384 Face size (user request)
+
+- **A 16384 x 16384 option** in the Face size list. No new rendering code was needed: a Face wider than the GPU's largest texture (8192) is already drawn in column tiles and streamed to disk (issues #15 and #16), and a tiled Face matches a single pass (new test with 7-wide tiles on a 16-wide Face, mean difference under 0.002).
+- **Measured** with `dump_sky 16384` (six Faces and the panorama as 16-bit PNG, real GPU, Windows): **peak 268 MiB, 61 s, 3.1 GiB of files** (panorama 1.6 GiB); headers read back as 16384 x 16384 and 65536 x 32768. HDRI and JPEG at this size were not run.
+- **Panorama is four Faces wide, as ever: 65536 x 32768 for PNG.** JPEG cannot be that wide (its limit is 65535) and keeps 8-bit RGB in memory, so `panorama_width_for(face_size, format)` stops a JPEG panorama at 32768 (1.6 GiB in memory at that size). JPEG Faces at 16384 hold 0.8 GiB each. The HDRI still stops at 8192 (`hdri_width`).
+- **UI:** choosing 16384 shows a note that each Face is 268 megapixels, the panorama is 65536 x 32768 (JPEG 32768, HDRI 8192) and the export takes many minutes and several GB of disk. There is no confirmation step; Cancel works as for any export.
+- **Not tried:** the 16384 export from the app window (only the example), JPEG or HDRI at 16384, or a machine with less than about 4 GB of free disk.

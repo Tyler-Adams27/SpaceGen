@@ -91,3 +91,28 @@ fn a_panorama_rendered_in_column_tiles_matches_a_single_pass() {
         "tiled and single-pass differ by {mean} on average"
     );
 }
+
+#[test]
+fn a_face_wider_than_one_tile_matches_a_single_pass() {
+    let (Ok(tiled), Ok(single)) = (
+        Renderer::software().map(|r| r.with_max_tile_width(7).with_max_band_rows(4)),
+        Renderer::software(),
+    ) else {
+        eprintln!("SKIPPED: no software adapter");
+        return;
+    };
+
+    // 16 wide in tiles of 7 is 7 + 7 + 2: this is how a 16384 Face is drawn on a GPU whose
+    // largest texture is 8192.
+    let a = tiled.render_face(&project(), Face::PositiveY, 16).unwrap();
+    let b = single.render_face(&project(), Face::PositiveY, 16).unwrap();
+
+    let mean: f32 = a
+        .pixels()
+        .iter()
+        .zip(b.pixels())
+        .map(|(p, q)| (0..3).map(|c| (p[c] - q[c]).abs()).sum::<f32>() / 3.0)
+        .sum::<f32>()
+        / a.pixels().len() as f32;
+    assert!(mean < 0.002, "tiled and single-pass Faces differ by {mean}");
+}
