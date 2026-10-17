@@ -329,3 +329,43 @@ fn cancelling_stops_between_bands_within_one_image() {
 
     assert!(error.is_cancelled());
 }
+
+#[test]
+fn banded_streaming_writes_the_same_pixels_as_a_single_band_for_every_format() {
+    let (Ok(banded), Ok(whole)) = (
+        Renderer::software().map(|r| r.with_max_band_rows(3)),
+        Renderer::software(),
+    ) else {
+        eprintln!("SKIPPED: no software adapter");
+        return;
+    };
+    for (label, format, depth) in [
+        ("png16", ImageFormat::Png, PngBitDepth::Sixteen),
+        ("png8", ImageFormat::Png, PngBitDepth::Eight),
+        ("jpeg", ImageFormat::Jpeg, PngBitDepth::Eight),
+    ] {
+        let options = ExportOptions {
+            format,
+            png_bit_depth: depth,
+            panorama: true,
+            ..faces_only(16)
+        };
+        let a = temp_dir(&format!("band-a-{label}"));
+        let b = temp_dir(&format!("band-b-{label}"));
+
+        let files = export_skybox(&banded, &star_project(), &a, &options, |_, _| {}).unwrap();
+        export_skybox(&whole, &star_project(), &b, &options, |_, _| {}).unwrap();
+
+        assert_eq!(files.len(), 7);
+        for file in &files {
+            let other = b.join(file.file_name().unwrap());
+            let left = image::open(file).unwrap();
+            let right = image::open(&other).unwrap();
+            assert_eq!(
+                left.as_bytes(),
+                right.as_bytes(),
+                "{label}: {file:?} differs when banded"
+            );
+        }
+    }
+}

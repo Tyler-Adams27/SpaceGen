@@ -1,5 +1,6 @@
 //! Writing rendered skies to disk.
 
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use spacegen_core::{EngineConvention, Face, HdriFormat, ImageFormat, PngBitDepth, Project};
@@ -148,20 +149,39 @@ fn write_skybox(
         for face in FACES {
             check()?;
             progress(written.len(), total);
-            let image = renderer.render_face(project, face, options.face_size)?;
             let path = dir.join(options.convention.face_file_name(
                 &options.name,
                 face,
                 options.format,
             ));
-            save_image(&image, &path, options)?;
+            let size = options.face_size;
+            stream_image(&path, size, size, options, |rows| {
+                renderer.render_face_rows(project, face, size, |_, band| rows.write(band))
+            })?;
             written.push(path);
         }
     }
     if options.panorama || options.hdri {
         check()?;
         progress(written.len(), total);
-        let image = renderer.render_equirectangular(project, panorama_width(options.face_size))?;
+        let width = panorama_width(options.face_size);
+        if !options.hdri {
+            // Only the panorama image is wanted: stream it, never holding the whole float image.
+            let path = dir.join(format!(
+                "{}_panorama.{}",
+                options.name,
+                extension(options.format)
+            ));
+            stream_image(&path, width, width / 2, options, |rows| {
+                renderer.render_equirectangular_rows(project, width, |_, band| rows.write(band))
+            })?;
+            written.push(path);
+            progress(written.len(), total);
+            return Ok(());
+        }
+        // The HDRI keeps the float pixels, so the whole image is rendered once and the panorama
+        // (if wanted) is saved from it.
+        let image = renderer.render_equirectangular(project, width)?;
         if options.panorama {
             let path = dir.join(format!(
                 "{}_panorama.{}",
@@ -188,6 +208,145 @@ fn write_skybox(
     }
     progress(written.len(), total);
     Ok(())
+}
+
+/// Receives a rendered image band by band and writes it to disk, converting linear light to sRGB
+/// on the way. PNG rows go straight to the file; JPEG keeps 8-bit RGB only (a fifth of the float
+/// image) because the encoder needs the whole picture.
+struct RowWriter {
+    width: u32,
+    height: u32,
+    rows_written: u32,
+    sink: RowSink,
+}
+
+enum RowSink {
+    Png {
+        stream: Box<png::StreamWriter<'static, std::io::BufWriter<std::fs::File>>>,
+        sixteen: bool,
+    },
+    Jpeg {
+        rgb: Vec<u8>,
+        file: std::io::BufWriter<std::fs::File>,
+        quality: u8,
+    },
+}
+
+impl RowWriter {
+    fn create(
+        path: &Path,
+        width: u32,
+        height: u32,
+        options: &ExportOptions,
+    ) -> Result<RowWriter, ExportError> {
+        let file = std::io::BufWriter::new(std::fs::File::create(path)?);
+        let sink = match options.format {
+            ImageFormat::Png => {
+                let sixteen = options.png_bit_depth == PngBitDepth::Sixteen;
+                let mut encoder = png::Encoder::new(file, width, height);
+                encoder.set_color(png::ColorType::Rgb);
+                // The same settings the `image` crate used before streaming: fast, adaptive filtering.
+                encoder.set_compression(png::Compression::Fast);
+                encoder.set_filter(png::Filter::Adaptive);
+                encoder.set_depth(if sixteen {
+                    png::BitDepth::Sixteen
+                } else {
+                    png::BitDepth::Eight
+                });
+                let stream = encoder
+                    .write_header()
+                    .and_then(|writer| writer.into_stream_writer())
+                    .map_err(png_error)?;
+                RowSink::Png {
+                    stream: Box::new(stream),
+                    sixteen,
+                }
+            }
+            ImageFormat::Jpeg => RowSink::Jpeg {
+                rgb: Vec::with_capacity(width as usize * height as usize * 3),
+                file,
+                quality: options.jpeg_quality.clamp(1, 100),
+            },
+        };
+        Ok(RowWriter {
+            width,
+            height,
+            rows_written: 0,
+            sink,
+        })
+    }
+
+    /// Writes the next band of whole rows.
+    fn write(&mut self, band: &[[f32; 4]]) -> Result<(), ExportError> {
+        self.rows_written += (band.len() / self.width as usize) as u32;
+        match &mut self.sink {
+            RowSink::Png { stream, sixteen } => {
+                let mut bytes = Vec::with_capacity(band.len() * if *sixteen { 6 } else { 3 });
+                for pixel in band {
+                    for channel in &pixel[..3] {
+                        let encoded = linear_to_srgb(*channel);
+                        if *sixteen {
+                            let value = (encoded * 65535.0).round() as u16;
+                            bytes.extend_from_slice(&value.to_be_bytes());
+                        } else {
+                            bytes.push((encoded * 255.0).round() as u8);
+                        }
+                    }
+                }
+                stream.write_all(&bytes)?;
+            }
+            RowSink::Jpeg { rgb, .. } => {
+                for pixel in band {
+                    rgb.extend(
+                        pixel[..3]
+                            .iter()
+                            .map(|c| (linear_to_srgb(*c) * 255.0).round() as u8),
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn finish(self) -> Result<(), ExportError> {
+        match self.sink {
+            RowSink::Png { stream, .. } => stream.finish().map_err(png_error)?,
+            RowSink::Jpeg { rgb, file, quality } => {
+                let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(file, quality);
+                image::ImageBuffer::<image::Rgb<u8>, Vec<u8>>::from_raw(
+                    self.width,
+                    self.height,
+                    rgb,
+                )
+                .expect("every row was written")
+                .write_with_encoder(encoder)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+fn png_error(error: png::EncodingError) -> ExportError {
+    ExportError::Io(std::io::Error::other(error))
+}
+
+/// Renders an image straight into `path` through a [`RowWriter`]. Whatever goes wrong, including
+/// a cancel, the unfinished file is removed.
+fn stream_image(
+    path: &Path,
+    width: u32,
+    height: u32,
+    options: &ExportOptions,
+    render: impl FnOnce(&mut RowWriter) -> Result<(), ExportError>,
+) -> Result<(), ExportError> {
+    let result = RowWriter::create(path, width, height, options).and_then(|mut rows| {
+        render(&mut rows)?;
+        rows.finish()
+    });
+    if result.is_err() {
+        let _ = std::fs::remove_file(path);
+    }
+    result
 }
 
 fn save_exr(image: &SkyImage, path: &Path) -> Result<(), ExportError> {
