@@ -7,7 +7,8 @@ use spacegen_core::{
     PngBitDepth, Project,
 };
 use spacegen_render::{
-    ExportOptions, Projection, Renderer, SkyUniforms, camera_basis, export_skybox,
+    CancelToken, ExportError, ExportOptions, Projection, Renderer, SkyUniforms, camera_basis,
+    export_skybox,
 };
 
 use crate::preview::{PreviewCallback, PreviewResources};
@@ -20,10 +21,12 @@ enum ExportMessage {
     Progress(usize, usize),
     Finished(usize),
     Failed(String),
+    Cancelled,
 }
 
 struct ExportJob {
     receiver: Receiver<ExportMessage>,
+    cancel: CancelToken,
     done: usize,
     total: usize,
 }
@@ -223,13 +226,15 @@ impl SpacegenApp {
             jpeg_quality: self.export.jpeg_quality,
         };
         let (sender, receiver) = mpsc::channel();
+        let cancel = CancelToken::new();
+        let thread_cancel = cancel.clone();
         let ctx = ctx.clone();
         std::thread::spawn(move || {
             let send = |message| {
                 let _ = sender.send(message);
                 ctx.request_repaint();
             };
-            let renderer = match Renderer::gpu() {
+            let renderer = match Renderer::gpu().map(|r| r.with_cancel_token(thread_cancel)) {
                 Ok(renderer) => renderer,
                 Err(error) => return send(ExportMessage::Failed(error.to_string())),
             };
@@ -238,11 +243,13 @@ impl SpacegenApp {
             });
             send(match result {
                 Ok(files) => ExportMessage::Finished(files.len()),
+                Err(ExportError::Cancelled) => ExportMessage::Cancelled,
                 Err(error) => ExportMessage::Failed(error.to_string()),
             });
         });
         self.job = Some(ExportJob {
             receiver,
+            cancel,
             done: 0,
             total: 1,
         });
@@ -264,6 +271,7 @@ impl SpacegenApp {
                     finished = Some(format!("Exported {count} files."))
                 }
                 ExportMessage::Failed(error) => finished = Some(format!("Export failed: {error}")),
+                ExportMessage::Cancelled => finished = Some("Export cancelled".to_string()),
             }
         }
         if let Some(message) = finished {
@@ -662,6 +670,10 @@ impl SpacegenApp {
                 egui::ProgressBar::new(job.done as f32 / job.total as f32)
                     .text(format!("{} of {}", job.done, job.total)),
             );
+            if ui.button("Cancel").clicked() {
+                job.cancel.cancel();
+                self.status = "Cancelling...".to_string();
+            }
         }
     }
 
