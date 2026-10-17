@@ -28,7 +28,7 @@ Use `--release`: the sky is drawn on the GPU, but unoptimized builds make the wi
 - **Layers** stack bottom to top. Each has visibility, opacity and a blend mode (additive or screen).
   *Star field* has density, brightness, star size, color variety and a tint; *Nebula* has coverage, cloud size, brightness and two colors; *Galaxy band* has tilt, width, brightness, dust lanes and two colors (core and outer glow); *Sun* has direction, height, size, brightness, glare and a color.
 - **Undo / Redo** (Ctrl+Z, Ctrl+Y or Ctrl+Shift+Z) cover every edit. **Save** (Ctrl+S) writes a `.spacegen` file.
-  The *Recent* menu lists the last eight saved or opened files. The export folder, name, size and format are remembered too; both live in `settings.json` in your config folder (`%APPDATA%SpaceGen` on Windows), and a damaged file is ignored.
+  The *Recent* menu lists the last eight saved or opened files. The export folder, name, size and format are remembered too; both live in `settings.json` in your config folder (`%APPDATA%/SpaceGen` on Windows), and a damaged file is ignored.
   A `*` in the window title marks unsaved changes. *New*, *Open* and closing the window then ask **Save, Discard or Cancel** first; if the save is cancelled or fails, nothing is discarded.
 - **Export** writes into a folder you choose:
   - six cube faces named for Unity, Unreal or Godot, as PNG (16-bit or 8-bit) or JPEG, 512 to 8192 pixels;
