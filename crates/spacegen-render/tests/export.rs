@@ -330,15 +330,54 @@ fn cancelling_stops_between_bands_within_one_image() {
     assert!(error.is_cancelled());
 }
 
+/// What the exported file should decode to: the in-memory render, encoded the way the format
+/// says (sRGB, 8 or 16 bit, JPEG through the same encoder and quality).
+fn expected_pixels(image: &spacegen_render::SkyImage, options: &ExportOptions) -> Vec<u8> {
+    let (width, height) = (image.width(), image.height());
+    match (options.format, options.png_bit_depth) {
+        (ImageFormat::Png, PngBitDepth::Sixteen) => {
+            let mut buffer = image::ImageBuffer::<image::Rgb<u16>, Vec<u16>>::new(width, height);
+            for (target, source) in buffer.pixels_mut().zip(image.pixels()) {
+                *target = image::Rgb(std::array::from_fn(|c| {
+                    (linear_to_srgb(source[c]) * 65535.0).round() as u16
+                }));
+            }
+            image::DynamicImage::ImageRgb16(buffer).as_bytes().to_vec()
+        }
+        (format, _) => {
+            let mut buffer = image::RgbImage::new(width, height);
+            for (target, source) in buffer.pixels_mut().zip(image.pixels()) {
+                *target = image::Rgb(std::array::from_fn(|c| {
+                    (linear_to_srgb(source[c]) * 255.0).round() as u8
+                }));
+            }
+            if format == ImageFormat::Jpeg {
+                let mut encoded = Vec::new();
+                let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(
+                    &mut encoded,
+                    options.jpeg_quality,
+                );
+                buffer.write_with_encoder(encoder).unwrap();
+                return image::load_from_memory(&encoded)
+                    .unwrap()
+                    .as_bytes()
+                    .to_vec();
+            }
+            buffer.into_raw()
+        }
+    }
+}
+
 #[test]
-fn banded_streaming_writes_the_same_pixels_as_a_single_band_for_every_format() {
-    let (Ok(banded), Ok(whole)) = (
-        Renderer::software().map(|r| r.with_max_band_rows(3)),
-        Renderer::software(),
-    ) else {
+fn streamed_files_decode_to_exactly_the_in_memory_render_for_every_format() {
+    // 3-row bands, so every image really is written in several pieces. (Banded and single-pass
+    // renders may differ by a pixel on some GPUs, so each file is compared with the render made
+    // by this same Renderer.)
+    let Ok(renderer) = Renderer::software().map(|r| r.with_max_band_rows(3)) else {
         eprintln!("SKIPPED: no software adapter");
         return;
     };
+    let project = star_project();
     for (label, format, depth) in [
         ("png16", ImageFormat::Png, PngBitDepth::Sixteen),
         ("png8", ImageFormat::Png, PngBitDepth::Eight),
@@ -350,21 +389,36 @@ fn banded_streaming_writes_the_same_pixels_as_a_single_band_for_every_format() {
             panorama: true,
             ..faces_only(16)
         };
-        let a = temp_dir(&format!("band-a-{label}"));
-        let b = temp_dir(&format!("band-b-{label}"));
+        let dir = temp_dir(&format!("stream-{label}"));
 
-        let files = export_skybox(&banded, &star_project(), &a, &options, |_, _| {}).unwrap();
-        export_skybox(&whole, &star_project(), &b, &options, |_, _| {}).unwrap();
+        let files = export_skybox(&renderer, &project, &dir, &options, |_, _| {}).unwrap();
 
         assert_eq!(files.len(), 7);
         for file in &files {
-            let other = b.join(file.file_name().unwrap());
-            let left = image::open(file).unwrap();
-            let right = image::open(&other).unwrap();
+            let name = file.file_name().unwrap().to_string_lossy().into_owned();
+            let image = if name.contains("panorama") {
+                renderer
+                    .render_equirectangular(&project, panorama_width(16))
+                    .unwrap()
+            } else {
+                let face = [
+                    spacegen_core::Face::PositiveX,
+                    spacegen_core::Face::NegativeX,
+                    spacegen_core::Face::PositiveY,
+                    spacegen_core::Face::NegativeY,
+                    spacegen_core::Face::PositiveZ,
+                    spacegen_core::Face::NegativeZ,
+                ]
+                .into_iter()
+                .find(|f| options.convention.face_file_name("sky", *f, format) == name)
+                .unwrap_or_else(|| panic!("unknown file {name}"));
+                renderer.render_face(&project, face, 16).unwrap()
+            };
+            let decoded = image::open(file).unwrap();
             assert_eq!(
-                left.as_bytes(),
-                right.as_bytes(),
-                "{label}: {file:?} differs when banded"
+                decoded.as_bytes(),
+                expected_pixels(&image, &options).as_slice(),
+                "{label}: {name} differs from the in-memory render"
             );
         }
     }
