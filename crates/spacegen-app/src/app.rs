@@ -112,9 +112,14 @@ impl SpacegenApp {
                     render_state.target_format,
                 ));
         }
+        SpacegenApp::with_settings_path(default_settings_path())
+    }
+
+    /// A new app that remembers its settings in `settings_path` (none: nowhere). Tests pass a temporary
+    /// file so they never touch the user's real settings.
+    fn with_settings_path(settings_path: Option<PathBuf>) -> SpacegenApp {
         let project = starter_project();
         let selected = project.layers().first().map(|l| l.id());
-        let settings_path = default_settings_path();
         let settings = settings_path
             .as_deref()
             .map(Settings::load)
@@ -274,25 +279,6 @@ impl SpacegenApp {
             .show(ctx, |ui| {
                 ui.label("This project has changes that are not saved.");
                 ui.horizontal(|ui| {
-                    ui.add_enabled_ui(!self.settings.recent.is_empty(), |ui| {
-                        ui.menu_button("Recent", |ui| {
-                            for path in self.settings.recent.clone() {
-                                let name = path.file_name().map_or_else(
-                                    || path.display().to_string(),
-                                    |n| n.to_string_lossy().into_owned(),
-                                );
-                                if ui
-                                    .button(name)
-                                    .on_hover_text(path.display().to_string())
-                                    .clicked()
-                                {
-                                    self.recent_to_open = Some(path);
-                                    self.attempt(Action::Open, ctx);
-                                    ui.close();
-                                }
-                            }
-                        });
-                    });
                     if ui.button("Save").clicked() {
                         choice = Some(Choice::Save);
                     }
@@ -505,6 +491,25 @@ impl SpacegenApp {
                 self.recent_to_open = None;
                 self.attempt(Action::Open, ctx);
             }
+            ui.add_enabled_ui(!self.settings.recent.is_empty(), |ui| {
+                ui.menu_button("Recent", |ui| {
+                    for path in self.settings.recent.clone() {
+                        let name = path.file_name().map_or_else(
+                            || path.display().to_string(),
+                            |n| n.to_string_lossy().into_owned(),
+                        );
+                        if ui
+                            .button(name)
+                            .on_hover_text(path.display().to_string())
+                            .clicked()
+                        {
+                            self.recent_to_open = Some(path);
+                            self.attempt(Action::Open, ctx);
+                            ui.close();
+                        }
+                    }
+                });
+            });
             if ui.button("Save").clicked() {
                 self.save_project(false);
             }
@@ -1024,6 +1029,13 @@ fn unit_slider(ui: &mut egui::Ui, value: &mut f32, label: &str) -> bool {
 
 impl eframe::App for SpacegenApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.show(ui);
+    }
+}
+
+impl SpacegenApp {
+    /// One frame of the whole window. Separate from `eframe::App::ui` so tests can drive it.
+    fn show(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         self.poll_export();
         self.handle_shortcuts(&ctx);
@@ -1074,3 +1086,6 @@ impl eframe::App for SpacegenApp {
         });
     }
 }
+
+#[cfg(test)]
+mod tests;
