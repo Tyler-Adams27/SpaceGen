@@ -171,6 +171,39 @@ impl Renderer {
         self.render(&uniforms, size, size)
     }
 
+    /// Renders one cubemap Face band by band, handing each band to `sink` as soon as it is read
+    /// back: `sink(first_row, pixels)` gets whole rows, top to bottom. Only one band is held in
+    /// memory at a time. An error from `sink` stops the render and is returned as it is.
+    pub fn render_face_rows<E: From<RenderError>>(
+        &self,
+        project: &Project,
+        face: Face,
+        size: u32,
+        sink: impl FnMut(u32, &[[f32; 4]]) -> Result<(), E>,
+    ) -> Result<(), E> {
+        let uniforms = SkyUniforms::new(
+            project,
+            Projection::Basis(face_basis(face)),
+            2.0 / size as f32,
+        );
+        self.render_rows(&uniforms, size, size, sink)
+    }
+
+    /// Like [`Renderer::render_face_rows`], for the equirectangular panorama.
+    pub fn render_equirectangular_rows<E: From<RenderError>>(
+        &self,
+        project: &Project,
+        width: u32,
+        sink: impl FnMut(u32, &[[f32; 4]]) -> Result<(), E>,
+    ) -> Result<(), E> {
+        let uniforms = SkyUniforms::new(
+            project,
+            Projection::Equirectangular,
+            std::f32::consts::TAU / width as f32,
+        );
+        self.render_rows(&uniforms, width, width / 2, sink)
+    }
+
     /// Renders the whole sky as an equirectangular panorama, `width` by `width / 2` pixels.
     pub fn render_equirectangular(
         &self,
@@ -191,30 +224,48 @@ impl Renderer {
         width: u32,
         height: u32,
     ) -> Result<SkyImage, RenderError> {
+        let mut pixels = Vec::with_capacity((width * height) as usize);
+        self.render_rows(uniforms, width, height, |_, band| {
+            pixels.extend_from_slice(band);
+            Ok::<(), RenderError>(())
+        })?;
+        Ok(SkyImage {
+            width,
+            height,
+            pixels,
+        })
+    }
+
+    /// Renders band by band, calling `sink(first_row, pixels)` for each, top to bottom.
+    fn render_rows<E: From<RenderError>>(
+        &self,
+        uniforms: &SkyUniforms,
+        width: u32,
+        height: u32,
+        mut sink: impl FnMut(u32, &[[f32; 4]]) -> Result<(), E>,
+    ) -> Result<(), E> {
         let row_bytes = width * BYTES_PER_PIXEL;
         let rows_per_band = self
             .max_band_rows
             .unwrap_or_else(|| (BAND_BUDGET_BYTES / row_bytes.max(1)).max(1))
             .clamp(1, height.max(1));
-        let mut pixels = Vec::with_capacity((width * height) as usize);
+        let mut pixels = Vec::with_capacity((width * rows_per_band) as usize);
         let mut start = 0;
         while start < height {
             if self.cancel.is_cancelled() {
-                return Err(RenderError::cancelled());
+                return Err(RenderError::cancelled().into());
             }
             let rows = rows_per_band.min(height - start);
             let band = uniforms.with_band(
                 start as f32 / height as f32,
                 (start + rows) as f32 / height as f32,
             );
+            pixels.clear();
             self.render_band(&band, width, rows, &mut pixels)?;
+            sink(start, &pixels)?;
             start += rows;
         }
-        Ok(SkyImage {
-            width,
-            height,
-            pixels,
-        })
+        Ok(())
     }
 
     /// Renders one band of rows and appends its pixels.
